@@ -170,6 +170,9 @@
   .q-row.filled { background: #FBF7EF; }
   .q-name { font-size: 15px; font-weight: 600; min-width: 0; }
   .q-name small { display: block; font-size: 12px; font-weight: 500; color: var(--ink-soft); }
+  .unit-lbl { flex: 0 0 auto !important; min-width: 70px; font-size: 15px; color: var(--ink-soft); }
+  .q-row .x { width: 28px; height: 28px; border-radius: 50%; border: none; background: var(--bg); color: var(--ink-soft); font-size: 14px; flex: none; }
+  .q-row .q { font-weight: 700; white-space: nowrap; margin-left: auto; }
   .q-row input { width: 92px; flex: none; padding: 10px; border-radius: 9px; border: 1px solid var(--line); font-size: 17px; text-align: right; background: var(--bg); font-family: inherit; }
   .err-msg { font-size: 13px; color: var(--rust); margin: 6px 0 10px; display: none; }
   .modal-actions { display: flex; gap: 10px; margin-top: 8px; position: sticky; bottom: 0; background: var(--surface); padding-top: 8px; }
@@ -345,9 +348,20 @@
       </div>
       <div id="cExtras"></div>
       <div class="field">
-        <label id="cListLabel">Productos</label>
-        <input type="search" id="cBuscar" placeholder="Buscar…" style="margin-bottom:8px;">
-        <div class="qlist" id="cLista"></div>
+        <label id="cPickLabel">Producto</label>
+        <select id="cItem"></select>
+      </div>
+      <div class="field">
+        <label>Cantidad</label>
+        <div class="row2" style="align-items:center;">
+          <input type="text" id="cCant" inputmode="decimal" autocomplete="off" placeholder="0">
+          <span id="cUnit" class="unit-lbl"></span>
+        </div>
+      </div>
+      <button class="btn-outline" id="cAdd" type="button">+ Agregar otro producto</button>
+      <div class="field" id="cAddedWrap" style="display:none;">
+        <label>Para guardar en esta carga</label>
+        <div class="qlist" id="cAdded"></div>
       </div>
       <div class="field">
         <label>Nota (opcional)</label>
@@ -1215,8 +1229,8 @@ function openCarga(tipo) {
   cargaTipo = tipo;
   const titles = { compra: "Nueva compra", conteo: "Conteo de stock", venta: "Ventas", pase: "Pase entre bares", baja: "Baja" };
   const helps = {
-    compra: "Poné solo lo que llegó. Lo que no compraste dejalo vacío.",
-    conteo: "Contá lo que hay en el bar y anotalo. Si no hay ninguno, poné 0. Dejá vacío solo lo que no contaste. Si te equivocaste, volvé a cargarlo: vale el último.",
+    compra: "Elegí cada producto que llegó y poné la cantidad.",
+    conteo: "Elegí cada producto, contá lo que hay en el bar y anotalo. Si no hay ninguno, poné 0. Si te equivocaste, volvé a cargarlo: vale el último.",
     venta: "Cuántos se vendieron de cada trago desde el conteo anterior, según el sistema de ventas (invitaciones incluidas). Poné como fecha el día del conteo.",
     pase: "Lo que se lleva a otro bar o llega de otro bar. El otro bar lo carga en su propia app.",
     baja: "Lo que se rompió o se perdió por otro motivo."
@@ -1225,7 +1239,6 @@ function openCarga(tipo) {
   document.getElementById("cHelp").textContent = helps[tipo];
   document.getElementById("cFecha").value = todayStr();
   document.getElementById("cNota").value = "";
-  document.getElementById("cBuscar").value = "";
   document.getElementById("cErr").style.display = "none";
 
   const extras = document.getElementById("cExtras");
@@ -1253,30 +1266,70 @@ function openCarga(tipo) {
     extras.innerHTML = "";
   }
 
-  const lista = document.getElementById("cLista");
-  document.getElementById("cListLabel").textContent = tipo === "venta" ? "Tragos vendidos" : "Productos";
-  if (tipo === "venta") {
-    lista.innerHTML = tragos.length ? tragos.map(t => qRow(t.nombre, "vendidos")).join("")
-      : '<div class="empty-state" style="padding:16px;">Todavía no hay tragos cargados (Config → Tragos y medidas).</div>';
-  } else {
-    lista.innerHTML = productos.length ? productos.map(p => qRow(p.nombre, unitLabel(p.unidad))).join("")
-      : '<div class="empty-state" style="padding:16px;">Todavía no hay productos cargados (Config → Productos).</div>';
-  }
-  lista.querySelectorAll("input").forEach(inp => inp.addEventListener("input", () => {
-    inp.closest(".q-row").classList.toggle("filled", inp.value.trim() !== "");
-  }));
+  cItems = [];
+  const esVenta = tipo === "venta";
+  document.getElementById("cPickLabel").textContent = esVenta ? "Trago" : "Producto";
+  document.getElementById("cAdd").textContent = esVenta ? "+ Agregar otro trago" : "+ Agregar otro producto";
+  renderCItems();
   document.getElementById("cargaOverlay").classList.add("open");
   document.querySelector("#cargaOverlay .modal-sheet").scrollTop = 0;
 }
 
-function qRow(name, unit) {
-  return '<div class="q-row" data-name="' + esc(norm(name)) + '"><div class="q-name">' + esc(name) + '<small>' + esc(unit) + '</small></div>' +
-    '<input type="text" inputmode="decimal" autocomplete="off" data-item="' + esc(name) + '" placeholder="–"></div>';
+// Lo que se va agregando a la carga: [{ nombre, cantidad }].
+let cItems = [];
+function cNames() { return cargaTipo === "venta" ? tragos.map(t => t.nombre) : productos.map(p => p.nombre); }
+function cUnitOf(name) {
+  if (cargaTipo === "venta") return "vendidos";
+  const p = prodByName(name);
+  return p ? unitLabel(p.unidad) : "";
 }
 
-document.getElementById("cBuscar").addEventListener("input", (e) => {
-  const q = norm(e.target.value.trim());
-  document.querySelectorAll("#cLista .q-row").forEach(r => { r.style.display = !q || r.getAttribute("data-name").includes(q) ? "flex" : "none"; });
+function renderCItems() {
+  const sel = document.getElementById("cItem");
+  const libres = cNames().filter(n => !cItems.some(i => i.nombre === n));
+  const vacio = cargaTipo === "venta" ? "Todavía no hay tragos (Config → Tragos y medidas)" : "Todavía no hay productos (Config → Productos)";
+  sel.innerHTML = cNames().length === 0 ? '<option value="">' + vacio + '</option>'
+    : libres.length === 0 ? '<option value="">Ya agregaste todos</option>'
+    : '<option value="">Elegí ' + (cargaTipo === "venta" ? "un trago" : "un producto") + '…</option>' +
+      libres.map(n => '<option value="' + esc(n) + '">' + esc(n) + '</option>').join("");
+  sel.value = "";
+  document.getElementById("cCant").value = "";
+  document.getElementById("cUnit").textContent = "";
+  const wrap = document.getElementById("cAddedWrap");
+  wrap.style.display = cItems.length ? "block" : "none";
+  const list = document.getElementById("cAdded");
+  list.innerHTML = cItems.map((it, i) =>
+    '<div class="q-row"><div class="q-name">' + esc(it.nombre) + '</div><span class="q">' + fmtN(it.cantidad) + " " + esc(cUnitOf(it.nombre)) + '</span>' +
+    '<button type="button" class="x" data-quitar="' + i + '" aria-label="Quitar">&times;</button></div>').join("");
+  list.querySelectorAll("[data-quitar]").forEach(b => b.addEventListener("click", () => {
+    cItems.splice(Number(b.getAttribute("data-quitar")), 1);
+    renderCItems();
+  }));
+}
+
+// Pasa lo elegido arriba a la lista. Devuelve false si hay algo mal.
+function addCurrentItem() {
+  const nombre = document.getElementById("cItem").value;
+  const txt = document.getElementById("cCant").value;
+  if (!nombre && txt.trim() === "") return true;
+  if (!nombre) { cErr(cargaTipo === "venta" ? "Elegí el trago." : "Elegí el producto."); return false; }
+  const q = parseQty(txt);
+  if (q === null) { cErr("Poné la cantidad de «" + nombre + "»."); return false; }
+  if (isNaN(q) || q < 0) { cErr("La cantidad de «" + nombre + "» tiene que ser un número (ej: 3 o 2,5)."); return false; }
+  if (q === 0 && cargaTipo !== "conteo") { cErr("La cantidad de «" + nombre + "» tiene que ser mayor que 0."); return false; }
+  cItems.push({ nombre: nombre, cantidad: q });
+  document.getElementById("cErr").style.display = "none";
+  renderCItems();
+  return true;
+}
+
+document.getElementById("cItem").addEventListener("change", (e) => {
+  document.getElementById("cUnit").textContent = e.target.value ? cUnitOf(e.target.value) : "";
+  if (e.target.value) document.getElementById("cCant").focus();
+});
+document.getElementById("cAdd").addEventListener("click", () => {
+  if (!document.getElementById("cItem").value) { cErr(cargaTipo === "venta" ? "Elegí el trago." : "Elegí el producto."); return; }
+  addCurrentItem();
 });
 
 function closeOverlay(id) { document.getElementById(id).classList.remove("open"); }
@@ -1288,17 +1341,10 @@ document.getElementById("cSave").addEventListener("click", () => {
   const fecha = document.getElementById("cFecha").value;
   if (!fecha) { cErr("Elegí una fecha."); return; }
   if (!PEOPLE.includes(phoneOwner)) { cErr("Este celular no sabe quién lo usa. Abrí de nuevo tu link de instalación."); return; }
-  const items = [];
-  let bad = "";
-  document.querySelectorAll("#cLista input[data-item]").forEach(inp => {
-    const q = parseQty(inp.value);
-    if (q === null) return;
-    if (isNaN(q) || q < 0) { bad = inp.getAttribute("data-item"); return; }
-    if (cargaTipo !== "conteo" && q === 0) return;
-    items.push({ nombre: inp.getAttribute("data-item"), cantidad: q });
-  });
-  if (bad) { cErr("Revisá la cantidad de «" + bad + "»: tiene que ser un número (ej: 3 o 2,5)."); return; }
-  if (!items.length) { cErr(cargaTipo === "venta" ? "Anotá cuántos se vendieron de al menos un trago." : "Anotá la cantidad de al menos un producto."); return; }
+  // Si quedó algo elegido arriba sin agregar, entra también.
+  if (!addCurrentItem()) return;
+  const items = cItems.slice();
+  if (!items.length) { cErr(cargaTipo === "venta" ? "Elegí un trago y cuántos se vendieron." : "Elegí un producto y poné la cantidad."); return; }
 
   let tipo = cargaTipo, detalle = "", comprobante = "";
   if (cargaTipo === "compra") {
@@ -1314,6 +1360,12 @@ document.getElementById("cSave").addEventListener("click", () => {
   const nota = document.getElementById("cNota").value.trim();
   if (cargaTipo === "baja" && detalle === "Otro" && !nota) { cErr("Contá el motivo en la nota."); return; }
 
+  if (cargaTipo === "conteo") {
+    const faltan = productos.map(p => p.nombre).filter(n => !items.some(i => i.nombre === n));
+    if (faltan.length && !confirm("No contaste " + (faltan.length === 1 ? "este producto" : "estos " + faltan.length + " productos") + ":\n\n" +
+      faltan.slice(0, 12).map(n => "• " + n).join("\n") + (faltan.length > 12 ? "\n…y " + (faltan.length - 12) + " más" : "") +
+      "\n\nLo que no se cuenta no entra en el control. ¿Guardar igual?")) return;
+  }
   const grupo = newId();
   const cargado = nowStamp();
   const movs = items.map((it, i) => {
