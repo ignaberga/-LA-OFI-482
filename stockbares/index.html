@@ -173,6 +173,13 @@
   .unit-lbl { flex: 0 0 auto !important; min-width: 70px; font-size: 15px; color: var(--ink-soft); }
   .q-row .x { width: 28px; height: 28px; border-radius: 50%; border: none; background: var(--bg); color: var(--ink-soft); font-size: 14px; flex: none; }
   .q-row .q { font-weight: 700; white-space: nowrap; margin-left: auto; }
+  .q-row.venta { flex-wrap: wrap; }
+  .q-row .uso { flex-basis: 100%; margin-top: 0; }
+  .uso { font-size: 13px; color: var(--gold); font-weight: 600; margin-top: 8px; line-height: 1.4; }
+  .uso.bad { color: var(--rust); }
+  .uso-total { background: var(--gold-bg); color: var(--gold); border-radius: 12px; padding: 12px 14px; margin-bottom: 14px; font-size: 14px; }
+  .uso-total strong { display: block; margin-bottom: 6px; }
+  .uso-total .p-row span:last-child { font-weight: 700; }
   .q-row input { width: 92px; flex: none; padding: 10px; border-radius: 9px; border: 1px solid var(--line); font-size: 17px; text-align: right; background: var(--bg); font-family: inherit; }
   .err-msg { font-size: 13px; color: var(--rust); margin: 6px 0 10px; display: none; }
   .modal-actions { display: flex; gap: 10px; margin-top: 8px; position: sticky; bottom: 0; background: var(--surface); padding-top: 8px; }
@@ -208,11 +215,12 @@
   .link-state { font-size: 14px; font-weight: 600; margin-bottom: 10px; }
   .link-state.ok { color: var(--green); }
   .link-state.no { color: var(--rust); }
-  .ing-row { display: flex; gap: 6px; align-items: center; margin-bottom: 8px; }
+  .ing-row { border: 1px solid var(--line); border-radius: 12px; padding: 10px; margin-bottom: 8px; }
   .ing-row select, .ing-row input { padding: 10px 8px; border-radius: 9px; border: 1px solid var(--line); font-size: 15px; background: var(--bg); font-family: inherit; color: var(--ink); min-width: 0; }
-  .ing-row .ing-prod { flex: 2.2; }
+  .ing-row .ing-prod { width: 100%; margin-bottom: 8px; }
+  .ing-line { display: flex; gap: 6px; align-items: center; }
   .ing-row .ing-cant { flex: 1; text-align: right; }
-  .ing-row .ing-en { flex: 1.2; }
+  .ing-row .ing-en { flex: 1.6; }
   .ing-row .x { width: 30px; height: 30px; border-radius: 50%; border: none; background: var(--bg); color: var(--ink-soft); flex: none; }
 
   .toast {
@@ -352,17 +360,19 @@
         <select id="cItem"></select>
       </div>
       <div class="field">
-        <label>Cantidad</label>
+        <label id="cCantLabel">Cantidad</label>
         <div class="row2" style="align-items:center;">
           <input type="text" id="cCant" inputmode="decimal" autocomplete="off" placeholder="0">
           <span id="cUnit" class="unit-lbl"></span>
         </div>
+        <div class="uso" id="cPreview" style="display:none;"></div>
       </div>
       <button class="btn-outline" id="cAdd" type="button">+ Agregar otro producto</button>
       <div class="field" id="cAddedWrap" style="display:none;">
         <label>Para guardar en esta carga</label>
         <div class="qlist" id="cAdded"></div>
       </div>
+      <div class="uso-total" id="cTotal" style="display:none;"></div>
       <div class="field">
         <label>Nota (opcional)</label>
         <textarea id="cNota" placeholder="Detalle breve"></textarea>
@@ -797,24 +807,54 @@ function fechasDeConteo(prod) {
 
 // Lo que se tendría que haber gastado de cada producto según las ventas
 // entre dos fechas (desde exclusiva, hasta inclusiva).
+// Cuánto se usa de cada producto al vender "cantidad" de un trago.
+function usoDeTrago(nombreTrago, cantidad) {
+  const r = { items: [], sinReceta: false, sinContenido: [] };
+  const t = tragoByName(nombreTrago);
+  if (!t || !t.ingredientes || !t.ingredientes.length) { r.sinReceta = true; return r; }
+  t.ingredientes.forEach(ing => {
+    const p = prodByName(ing.producto);
+    if (!p) return;
+    let u;
+    if (ing.en === "unidad") u = Number(ing.cantidad) * Number(cantidad);
+    else {
+      if (!(Number(p.contenido) > 0)) { r.sinContenido.push(p.nombre); return; }
+      u = Number(ing.cantidad) * Number(cantidad) / Number(p.contenido);
+    }
+    const prev = r.items.find(i => i.producto === p.nombre);
+    if (prev) prev.unidades += u; else r.items.push({ producto: p.nombre, unidades: u });
+  });
+  return r;
+}
+
+// Suma lo usado por varias ventas: [{ producto, unidades }].
+function usoTotal(ventas) {
+  const tot = [];
+  ventas.forEach(v => usoDeTrago(v.producto || v.nombre, v.cantidad).items.forEach(i => {
+    const prev = tot.find(x => x.producto === i.producto);
+    if (prev) prev.unidades += i.unidades; else tot.push({ producto: i.producto, unidades: i.unidades });
+  }));
+  return tot;
+}
+
+function usoTexto(items) {
+  return items.map(i => {
+    const p = prodByName(i.producto);
+    return fmtN(i.unidades) + " " + unitLabel(p ? p.unidad : "") + " de " + i.producto;
+  }).join(" · ");
+}
+
 function consumoDeVentas(desde, hasta) {
   const porProducto = {};
   const sinReceta = new Set();
   const sinContenido = new Set();
   movimientos.filter(m => m.tipo === "venta" && (!desde || m.fecha > desde) && (!hasta || m.fecha <= hasta)).forEach(v => {
-    const t = tragoByName(v.producto);
-    if (!t || !t.ingredientes || !t.ingredientes.length) { sinReceta.add(v.producto); return; }
-    t.ingredientes.forEach(ing => {
-      const p = prodByName(ing.producto);
-      if (!p) return;
-      let u;
-      if (ing.en === "unidad") u = Number(ing.cantidad) * Number(v.cantidad);
-      else {
-        if (!(Number(p.contenido) > 0)) { sinContenido.add(p.nombre); return; }
-        u = Number(ing.cantidad) * Number(v.cantidad) / Number(p.contenido);
-      }
-      const acc = porProducto[p.nombre] || (porProducto[p.nombre] = { unidades: 0, detalle: {} });
-      acc.unidades += u;
+    const uso = usoDeTrago(v.producto, v.cantidad);
+    if (uso.sinReceta) { sinReceta.add(v.producto); return; }
+    uso.sinContenido.forEach(n => sinContenido.add(n));
+    uso.items.forEach(i => {
+      const acc = porProducto[i.producto] || (porProducto[i.producto] = { unidades: 0, detalle: {} });
+      acc.unidades += i.unidades;
       acc.detalle[v.producto] = (acc.detalle[v.producto] || 0) + Number(v.cantidad);
     });
   });
@@ -878,6 +918,10 @@ function groupHtml(g) {
   if ((g.tipo === "pase_sale") && g.detalle) extras.push("Hacia: " + esc(g.detalle));
   if ((g.tipo === "pase_entra") && g.detalle) extras.push("Desde: " + esc(g.detalle));
   if (g.nota) extras.push("Nota: " + esc(g.nota));
+  if (g.tipo === "venta") {
+    const tot = usoTotal(g.items);
+    if (tot.length) extras.push("Se usó: " + esc(usoTexto(tot)));
+  }
   const hora = g.cargado && g.cargado.length >= 16 ? " · cargado " + dayLabel(g.cargado.slice(0, 10)) + " " + g.cargado.slice(11, 16) : "";
   const del = can("borrar") ? '<button class="btn-del" data-del="' + esc(g.id) + '">Borrar esta carga</button>' : "";
   const n = g.items.length;
@@ -1231,7 +1275,7 @@ function openCarga(tipo) {
   const helps = {
     compra: "Elegí cada producto que llegó y poné la cantidad.",
     conteo: "Elegí cada producto, contá lo que hay en el bar y anotalo. Si no hay ninguno, poné 0. Si te equivocaste, volvé a cargarlo: vale el último.",
-    venta: "Cuántos se vendieron de cada trago desde el conteo anterior, según el sistema de ventas (invitaciones incluidas). Poné como fecha el día del conteo.",
+    venta: "Los tragos vendidos según el sistema de ventas (invitaciones incluidas). Podés cargar un día o varios juntos: poné como fecha el último día y aclarás el período en la nota.",
     pase: "Lo que se lleva a otro bar o llega de otro bar. El otro bar lo carga en su propia app.",
     baja: "Lo que se rompió o se perdió por otro motivo."
   };
@@ -1269,6 +1313,7 @@ function openCarga(tipo) {
   cItems = [];
   const esVenta = tipo === "venta";
   document.getElementById("cPickLabel").textContent = esVenta ? "Trago" : "Producto";
+  document.getElementById("cCantLabel").textContent = esVenta ? "¿Cuántos se vendieron?" : "Cantidad";
   document.getElementById("cAdd").textContent = esVenta ? "+ Agregar otro trago" : "+ Agregar otro producto";
   renderCItems();
   document.getElementById("cargaOverlay").classList.add("open");
@@ -1295,16 +1340,49 @@ function renderCItems() {
   sel.value = "";
   document.getElementById("cCant").value = "";
   document.getElementById("cUnit").textContent = "";
+  renderCPreview();
   const wrap = document.getElementById("cAddedWrap");
   wrap.style.display = cItems.length ? "block" : "none";
   const list = document.getElementById("cAdded");
+  const esVenta = cargaTipo === "venta";
   list.innerHTML = cItems.map((it, i) =>
-    '<div class="q-row"><div class="q-name">' + esc(it.nombre) + '</div><span class="q">' + fmtN(it.cantidad) + " " + esc(cUnitOf(it.nombre)) + '</span>' +
-    '<button type="button" class="x" data-quitar="' + i + '" aria-label="Quitar">&times;</button></div>').join("");
+    '<div class="q-row' + (esVenta ? " venta" : "") + '"><div class="q-name">' + esc(it.nombre) + '</div><span class="q">' + fmtN(it.cantidad) + " " + esc(cUnitOf(it.nombre)) + '</span>' +
+    '<button type="button" class="x" data-quitar="' + i + '" aria-label="Quitar">&times;</button>' +
+    (esVenta ? usoHtml(it.nombre, it.cantidad) : "") + '</div>').join("");
+  renderCTotal();
   list.querySelectorAll("[data-quitar]").forEach(b => b.addEventListener("click", () => {
     cItems.splice(Number(b.getAttribute("data-quitar")), 1);
     renderCItems();
   }));
+}
+
+// "= 16,8 botellas de Fernet" para un trago y una cantidad.
+function usoHtml(trago, cantidad) {
+  const uso = usoDeTrago(trago, cantidad);
+  if (uso.sinReceta) return '<div class="uso bad">Este trago no tiene medidas cargadas (Config → Tragos y medidas).</div>';
+  if (uso.sinContenido.length) return '<div class="uso bad">A «' + esc(uso.sinContenido[0]) + '» le falta decir cuánto trae cada unidad (Config → Productos).</div>';
+  return '<div class="uso">= ' + esc(usoTexto(uso.items)) + '</div>';
+}
+
+// Muestra el cálculo de lo que se está escribiendo, antes de agregarlo.
+function renderCPreview() {
+  const box = document.getElementById("cPreview");
+  const nombre = document.getElementById("cItem").value;
+  const q = parseQty(document.getElementById("cCant").value);
+  if (cargaTipo !== "venta" || !nombre || q === null || isNaN(q) || q <= 0) { box.style.display = "none"; return; }
+  box.outerHTML = usoHtml(nombre, q).replace('<div class="uso', '<div id="cPreview" class="uso');
+}
+
+// Total de botellas que se usaron con todos los tragos de la carga.
+function renderCTotal() {
+  const box = document.getElementById("cTotal");
+  const tot = cargaTipo === "venta" ? usoTotal(cItems) : [];
+  if (!tot.length || cItems.length < 2) { box.style.display = "none"; return; }
+  box.style.display = "block";
+  box.innerHTML = '<strong>Total que se usó con estas ventas</strong>' + tot.map(i => {
+    const p = prodByName(i.producto);
+    return '<div class="p-row"><span>' + esc(i.producto) + '</span><span>' + fmtN(i.unidades) + " " + esc(unitLabel(p ? p.unidad : "")) + '</span></div>';
+  }).join("");
 }
 
 // Pasa lo elegido arriba a la lista. Devuelve false si hay algo mal.
@@ -1325,8 +1403,10 @@ function addCurrentItem() {
 
 document.getElementById("cItem").addEventListener("change", (e) => {
   document.getElementById("cUnit").textContent = e.target.value ? cUnitOf(e.target.value) : "";
+  renderCPreview();
   if (e.target.value) document.getElementById("cCant").focus();
 });
+document.getElementById("cCant").addEventListener("input", renderCPreview);
 document.getElementById("cAdd").addEventListener("click", () => {
   if (!document.getElementById("cItem").value) { cErr(cargaTipo === "venta" ? "Elegí el trago." : "Elegí el producto."); return; }
   addCurrentItem();
@@ -1430,10 +1510,10 @@ let editingTrago = null;
 function ingRowHtml(ing) {
   const opts = productos.map(p => '<option value="' + esc(p.nombre) + '"' + (ing && ing.producto === p.nombre ? " selected" : "") + '>' + esc(p.nombre) + '</option>').join("");
   const en = ing && ing.en === "unidad" ? "unidad" : "medida";
-  return '<div class="ing-row"><select class="ing-prod">' + opts + '</select>' +
+  return '<div class="ing-row"><select class="ing-prod">' + opts + '</select><div class="ing-line">' +
     '<input class="ing-cant" type="text" inputmode="decimal" placeholder="70" value="' + (ing ? esc(String(ing.cantidad).replace(".", ",")) : "") + '">' +
-    '<select class="ing-en"><option value="medida"' + (en === "medida" ? " selected" : "") + '>ml / g</option><option value="unidad"' + (en === "unidad" ? " selected" : "") + '>enteras</option></select>' +
-    '<button type="button" class="x" aria-label="Quitar">&times;</button></div>';
+    '<select class="ing-en"><option value="medida"' + (en === "medida" ? " selected" : "") + '>ml o g</option><option value="unidad"' + (en === "unidad" ? " selected" : "") + '>enteras</option></select>' +
+    '<button type="button" class="x" aria-label="Quitar">&times;</button></div></div>';
 }
 function bindIngRows() {
   document.querySelectorAll("#tIngr .ing-row .x").forEach(b => b.onclick = () => {
