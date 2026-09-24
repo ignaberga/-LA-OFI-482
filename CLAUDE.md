@@ -2,15 +2,57 @@
 
 ## Qué es este proyecto
 
-Ignacio es **contador público**. En este repositorio van a vivir apps simples
-para la oficina, hechas con la misma idea que la app de gastos de
-**La Emilia SAS** (repo `ignaberga/LA-EMILIA-SAS`), que ya funciona bien en tres
-celulares.
+Ignacio es **contador público** y trabaja en un estudio contable. En este
+repositorio viven apps simples para la oficina, hechas con la misma idea que
+la app de gastos de **La Emilia SAS** (repo `ignaberga/LA-EMILIA-SAS`), que ya
+funciona bien en tres celulares.
 
-Todavía no está definido para qué se va a usar: **Ignacio lo cuenta en la
-conversación**. Lo que hay ahora es un **molde**: una copia de la app de La
-Emilia sin nada del campo (sin Daniel/Javier, sin categorías agrícolas), lista
-para adaptar. Antes de cambiar nada, preguntarle a Ignacio qué quiere armar.
+**Cada app va en su propia carpeta**, con su `index.html`, su
+`apps-script/Code.gs` y su propio `KEY_PREFIX`. La raíz tiene un `index.html`
+que es solo un menú con links a cada app.
+
+| Carpeta | App |
+|---|---|
+| `stockbares/` | Stock de los bares de Noel (jefe de Ignacio). Ver abajo. |
+| `molde/` | Molde de ingresos y gastos (copia de La Emilia sin nada del campo), base para apps nuevas. |
+
+Para una app nueva: copiar `molde/` a una carpeta nueva, cambiarle el
+`KEY_PREFIX` y adaptarla. Antes de cambiar nada, preguntarle a Ignacio qué
+quiere armar.
+
+## Stock de bares (`stockbares/`)
+
+- Pedido de **Noel** (dueño de los bares): controlar el stock de artículos
+  caros (botellas de alcohol; quizás productos de cocina) porque sospecha que
+  faltan botellas. Usuarios: **Noel** (controla todo), **Josefina** (hace las
+  compras y tiene facturas y remitos) y el **encargado** de cada bar. Ignacio
+  no usa la app.
+- **Una planilla (y un Apps Script) por bar**, todas de Noel. Así el
+  encargado de un bar no puede ver otro. El link de instalación lleva uno o
+  varios pares `vincular=<exec>&bar=<Nombre>` más `quien=<Persona>`; Noel
+  recibe un link con todos sus bares y ve un selector arriba. La persona del
+  link manda siempre (no se cambia desde la app). Los pendientes sin enviar
+  llevan el nombre del bar al que pertenecen.
+- Movimientos (hoja "Movimientos", una fila por producto, agrupadas por
+  `Grupo` = una carga): `compra`, `conteo`, `pase_sale`, `pase_entra`, `baja`
+  (motivo), `venta` (Producto = nombre del trago, cantidad = tragos vendidos).
+- Productos (hoja "Productos"): unidad en que se cuentan y cuánto trae cada
+  unidad (ej. 750 ml). Tragos (hoja "Tragos"): lo que lleva cada trago, en
+  ml/g o en unidades enteras (vino vendido por botella).
+- Control: conteo anterior + compras ± pases − bajas − consumo teórico de las
+  ventas = debería haber; se compara con el conteo nuevo. Movimientos con
+  fecha > conteo anterior y ≤ conteo nuevo (el conteo es "al cierre del día").
+  Si un producto se contó dos veces el mismo día, vale el último (así se
+  corrigen errores sin borrar).
+- Permisos en `PERMISOS` (index.html). Solo Noel borra (también lo exige el
+  Apps Script con `QUIEN_PUEDE_BORRAR`). El encargado no ve Control ni cargas
+  ajenas (conteo a ciegas). Las invitaciones se cargan en el sistema de ventas
+  a precio cero, así que ya vienen dentro de las ventas.
+- El control se hace los domingos. Pendiente de definir con Noel: cómo contar
+  las botellas abiertas (hoy se aceptan decimales, ej. 3,5).
+- Por ahora hay un solo bar: **Hugo**. La planilla de prueba es de la cuenta
+  de Ignacio; la definitiva la tiene que crear Noel con su cuenta (el Apps
+  Script funciona a nombre de quien lo implementa).
 
 ## Cómo trabajar con Ignacio
 
@@ -31,7 +73,7 @@ para adaptar. Antes de cambiar nada, preguntarle a Ignacio qué quiere armar.
 
 ## La idea (lo que se trae de La Emilia)
 
-1. **Un solo archivo** (`index.html`): HTML, CSS y JS juntos, sin librerías,
+1. **Un solo archivo por app** (`<carpeta>/index.html`): HTML, CSS y JS juntos, sin librerías,
    sin build, sin servidor. Se publica con GitHub Pages y se instala como
    acceso directo en la pantalla de inicio (no es app de tienda). Se actualiza
    sola.
@@ -55,7 +97,8 @@ para adaptar. Antes de cambiar nada, preguntarle a Ignacio qué quiere armar.
    - Una respuesta vacía o incompleta de la planilla **nunca pisa** los datos
      del teléfono (ver `fetchAllFromSheet`).
 4. **Link de instalación:** la dirección `/exec` del Apps Script viaja en el
-   link: `…/-LA-OFI-482/#vincular=<dirección>&quien=<Nombre>`. Ese
+   link: `…/-LA-OFI-482/<carpeta>/#vincular=<dirección>&quien=<Nombre>` (en
+   stockbares además `&bar=<Nombre del bar>`). Ese
    link queda grabado en el ícono de la pantalla de inicio, así el celular no
    se desvincula nunca (en iPhone, Safari y el ícono guardan datos por
    separado, e iOS puede borrar datos de sitios poco visitados). No borrar el
@@ -71,11 +114,12 @@ para adaptar. Antes de cambiar nada, preguntarle a Ignacio qué quiere armar.
 
 ## Cómo adaptar el molde
 
-Arriba del `<script>` de `index.html` está el bloque **AJUSTES DEL PROYECTO**:
+Arriba del `<script>` de cada `index.html` está el bloque **AJUSTES DEL PROYECTO**:
 
 - `APP_NAME`, `APP_SUB`: nombre y subtítulo.
 - `PEOPLE`: quiénes cargan (hoy tiene nombres de ejemplo).
-- `KEY_PREFIX`: prefijo de lo que se guarda en el celular (`oficina_`).
+- `KEY_PREFIX`: prefijo de lo que se guarda en el celular (`oficina_` en el
+  molde, `stockbares_` en stock de bares).
 - `DEFAULT_CATS`: categorías de arranque (deben coincidir con
   `DEFAULT_CONFIG` en `apps-script/Code.gs`).
 
@@ -111,7 +155,7 @@ Apps Script.
 
 ## Apps Script
 
-`apps-script/Code.gs` se pega en la planilla (Extensiones → Apps Script). Al
+El `apps-script/Code.gs` de cada app se pega en la planilla (Extensiones → Apps Script). Al
 principio del archivo están los pasos. Para actualizarlo: pegar, guardar y
 **Gestionar implementaciones → Nueva versión** (nunca "Nueva implementación",
 que cambia el link). Mantener el archivo del repo igual al de la planilla.
@@ -120,7 +164,9 @@ que cambia el link). Mantener el archivo del repo igual al de la planilla.
 
 Para que la app se pueda abrir en el celular hay que activar GitHub Pages una
 vez: en GitHub, Settings → Pages → Branch `main` / carpeta raíz → Save. Queda
-en https://ignaberga.github.io/-LA-OFI-482/. Guiar a Ignacio paso a
+en https://ignaberga.github.io/-LA-OFI-482/ y cada app en su carpeta
+(ej. `…/-LA-OFI-482/stockbares/`). No cambiar el nombre de las carpetas una
+vez instaladas. Guiar a Ignacio paso a
 paso cuando llegue el momento.
 
 ## Historial de decisiones
@@ -130,3 +176,5 @@ paso cuando llegue el momento.
   confirmación al borrar). Las personas y categorías pasaron a un bloque de
   ajustes arriba del código, y las claves del celular usan el prefijo
   `oficina_`.
+- Septiembre 2026: primera app real, **stock de bares** (`stockbares/`), pedida
+  por Noel. El molde pasó a `molde/` y cada app nueva va en su carpeta.
