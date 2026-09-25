@@ -3,31 +3,28 @@
 // ============================================================
 // Que hace: convierte esta planilla en la base de datos de UN bar.
 // La app le pide los datos (doGet) y le manda los cambios (doPost).
-// La primera vez crea sola las hojas "Movimientos", "Productos",
-// "Tragos" y "Config" con sus titulos.
-//
-// Cada bar tiene su propia planilla con este mismo codigo pegado.
-// Asi el encargado de un bar no tiene forma de ver los datos de otro.
+// Crea sola las hojas que necesita:
+//   - "Conteos": cada producto contado, renglon por renglon.
+//   - "Catalogo": los productos (Bebidas/Comida, Top 10/Resto, unidad).
+//   - "Resumen": se arma sola despues de cada carga, con los productos
+//     en filas y las fechas en columnas. No escribir a mano en ella.
+//   - "Config": las unidades de medida.
 //
 // Este archivo es una copia de respaldo: el que funciona de verdad
 // es el que esta pegado dentro de la planilla. La direccion /exec
 // NUNCA va en el repositorio.
 //
 // COMO INSTALARLO DESDE CERO:
-// 1. Crear la planilla de Google del bar (ej: "Stock Hugo").
+// 1. Crear la planilla de Google del bar (ej: "Stock Archie").
 // 2. Extensiones > Apps Script.
 // 3. Borrar lo que haya en Code.gs, pegar este archivo completo y
 //    guardar (icono de disquete).
 // 4. Implementar > Nueva implementacion > tipo "Aplicacion web".
 //      - Ejecutar como: Yo
 //      - Quien tiene acceso: Cualquier usuario
-//    Autorizar los permisos que pide Google (es tu propia planilla).
+//    Autorizar los permisos que pide Google.
 // 5. Copiar la URL que termina en /exec y pasarsela a Claude por el
 //    chat para que arme los links de instalacion.
-//
-// (Opcional) Para cargar productos y tragos de ejemplo: arriba, en
-// la lista de funciones, elegir "cargarEjemplo" y tocar "Ejecutar".
-// Solo agrega si la hoja Productos esta vacia; nunca borra nada.
 //
 // COMO ACTUALIZARLO (sin que cambie el link):
 // 1. Extensiones > Apps Script.
@@ -43,25 +40,29 @@
 // de la app (PERMISOS en stockbares/index.html).
 const QUIEN_PUEDE_BORRAR = ["Noel"];
 
-const SHEET_MOV = "Movimientos";
-const SHEET_PROD = "Productos";
-const SHEET_TRAGOS = "Tragos";
+const SHEET_CONTEOS = "Conteos";
+const SHEET_CATALOGO = "Catálogo";
+const SHEET_RESUMEN = "Resumen";
 const SHEET_CONFIG = "Config";
 
-const MOV_HEADERS = ["ID","Fecha","Tipo","Producto","Cantidad","Unidad","Persona","Detalle","Comprobante","Nota","Cargado","Grupo"];
-const PROD_HEADERS = ["Producto","Unidad","Contenido","Medida"];
-const TRAGO_HEADERS = ["Trago","Producto","Cantidad","En"];
+const CONTEO_HEADERS = ["ID","Fecha","Categoría","Grupo","Producto","Cantidad","Unidad","Persona","Nota","Cargado","Carga"];
+const CATALOGO_HEADERS = ["Producto","Categoría","Grupo","Unidad"];
 const CONFIG_HEADERS = ["Tipo","Valor"];
 
 const DEFAULT_CONFIG = {
   unidades: ["Botellas","Kilos","Unidades"]
 };
 
+// Cuantas fechas (las mas nuevas) se muestran en la hoja Resumen.
+const RESUMEN_FECHAS = 20;
+
+function ss_() { return SpreadsheetApp.getActiveSpreadsheet(); }
+
+// Solo para escribir (siempre con el candado puesto): crea la hoja si falta.
 function getSheet_(name, headers) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  let sh = ss.getSheetByName(name);
+  let sh = ss_().getSheetByName(name);
   if (!sh) {
-    sh = ss.insertSheet(name);
+    sh = ss_().insertSheet(name);
     sh.appendRow(headers);
     sh.setFrozenRows(1);
     sh.getRange(1, 1, 1, headers.length).setFontWeight("bold");
@@ -69,22 +70,14 @@ function getSheet_(name, headers) {
   return sh;
 }
 
-function ensureConfigDefaults_() {
-  const sh = getSheet_(SHEET_CONFIG, CONFIG_HEADERS);
-  if (sh.getLastRow() <= 1) {
-    Object.keys(DEFAULT_CONFIG).forEach(function (tipo) {
-      DEFAULT_CONFIG[tipo].forEach(function (valor) { sh.appendRow([tipo, valor]); });
-    });
-  }
-}
-
-function dataRows_(sh) {
+// Para leer: si la hoja no existe todavia, no hay datos (no crea nada).
+function readRows_(name) {
+  const sh = ss_().getSheetByName(name);
+  if (!sh || sh.getLastRow() <= 1) return [];
   return sh.getDataRange().getValues().slice(1);
 }
 
-function isDate_(v) {
-  return Object.prototype.toString.call(v) === "[object Date]";
-}
+function isDate_(v) { return Object.prototype.toString.call(v) === "[object Date]"; }
 
 function formatDate_(v) {
   if (isDate_(v)) return Utilities.formatDate(v, Session.getScriptTimeZone(), "yyyy-MM-dd");
@@ -102,71 +95,54 @@ function num_(v) {
   return isNaN(n) ? 0 : n;
 }
 
-function readMovimientos_() {
-  const sh = getSheet_(SHEET_MOV, MOV_HEADERS);
-  return dataRows_(sh).filter(function (r) { return r[0] !== ""; }).map(function (r) {
+function readConteos_() {
+  return readRows_(SHEET_CONTEOS).filter(function (r) { return r[0] !== ""; }).map(function (r) {
     return {
       id: String(r[0]),
       fecha: formatDate_(r[1]),
-      tipo: String(r[2]),
-      producto: String(r[3]),
-      cantidad: num_(r[4]),
-      unidad: String(r[5] || ""),
-      persona: String(r[6] || ""),
-      detalle: String(r[7] || ""),
-      comprobante: String(r[8] || ""),
-      nota: String(r[9] || ""),
-      cargado: formatDateTime_(r[10]),
-      grupo: String(r[11] || r[0])
+      categoria: String(r[2] || ""),
+      grupo: String(r[3] || ""),
+      producto: String(r[4]),
+      cantidad: num_(r[5]),
+      unidad: String(r[6] || ""),
+      persona: String(r[7] || ""),
+      nota: String(r[8] || ""),
+      cargado: formatDateTime_(r[9]),
+      carga: String(r[10] || r[0])
     };
   });
 }
 
-function readProductos_() {
-  const sh = getSheet_(SHEET_PROD, PROD_HEADERS);
-  return dataRows_(sh).filter(function (r) { return r[0] !== ""; }).map(function (r) {
+function readCatalogo_() {
+  return readRows_(SHEET_CATALOGO).filter(function (r) { return r[0] !== ""; }).map(function (r) {
     return {
       nombre: String(r[0]),
-      unidad: String(r[1] || ""),
-      contenido: num_(r[2]),
-      medida: String(r[3] || "")
+      categoria: String(r[1] || "Bebidas"),
+      grupo: String(r[2] || "Resto"),
+      unidad: String(r[3] || "")
     };
   });
 }
 
-function readTragos_() {
-  const sh = getSheet_(SHEET_TRAGOS, TRAGO_HEADERS);
-  const orden = [];
-  const porNombre = {};
-  dataRows_(sh).forEach(function (r) {
-    if (r[0] === "") return;
-    const nombre = String(r[0]);
-    if (!porNombre[nombre]) { porNombre[nombre] = { nombre: nombre, ingredientes: [] }; orden.push(nombre); }
-    if (r[1] !== "") {
-      porNombre[nombre].ingredientes.push({
-        producto: String(r[1]),
-        cantidad: num_(r[2]),
-        en: String(r[3] || "medida") === "unidad" ? "unidad" : "medida"
-      });
-    }
+function readUnidades_() {
+  const out = [];
+  readRows_(SHEET_CONFIG).forEach(function (r) {
+    if (String(r[0]) === "unidades" && r[1] !== "") out.push(String(r[1]));
   });
-  return orden.map(function (n) { return porNombre[n]; });
+  return out.length ? out : DEFAULT_CONFIG.unidades;
 }
 
-function readConfig_() {
+// La primera vez que se cambian las unidades, se guardan las de arranque.
+function ensureUnidades_() {
   const sh = getSheet_(SHEET_CONFIG, CONFIG_HEADERS);
-  const out = { unidades: [] };
-  dataRows_(sh).forEach(function (r) {
-    if (out[r[0]] && r[1] !== "") out[r[0]].push(String(r[1]));
-  });
-  Object.keys(DEFAULT_CONFIG).forEach(function (k) {
-    if (!out[k] || out[k].length === 0) out[k] = DEFAULT_CONFIG[k];
-  });
-  return out;
+  if (sh.getLastRow() <= 1) {
+    DEFAULT_CONFIG.unidades.forEach(function (u) { sh.appendRow(["unidades", u]); });
+  }
+  return sh;
 }
 
-// Borra las filas cuya primera columna (o la columna col) coincide,
-// de abajo hacia arriba y en tramos seguidos para que sea rapido.
+// Borra las filas cuya columna col coincide, de abajo hacia arriba y en
+// tramos seguidos para que sea rapido.
 function deleteRowsWhere_(sh, col, value) {
   const data = sh.getDataRange().getValues();
   let i = data.length - 1;
@@ -182,21 +158,61 @@ function deleteRowsWhere_(sh, col, value) {
   }
 }
 
-function movimientoToRow_(m) {
+function conteoToRow_(c) {
   return [
-    m.id,
-    m.fecha,
-    m.tipo,
-    m.producto,
-    m.cantidad,
-    m.unidad || "",
-    m.persona || "",
-    m.detalle || "",
-    m.comprobante || "",
-    m.nota || "",
-    m.cargado || "",
-    m.grupo || m.id
+    c.id, c.fecha, c.categoria || "", c.grupo || "", c.producto, c.cantidad,
+    c.unidad || "", c.persona || "", c.nota || "", c.cargado || "", c.carga || c.id
   ];
+}
+
+// Arma la hoja Resumen: productos en filas, fechas en columnas (la mas
+// nueva primero). Si un producto se conto dos veces el mismo dia, vale
+// el ultimo. Es solo una vista: los datos de verdad estan en Conteos.
+function rebuildResumen_() {
+  const conteos = readConteos_();
+  const catalogo = readCatalogo_();
+  const fechas = [];
+  const valor = {};
+  const cuando = {};
+  conteos.forEach(function (c) {
+    if (fechas.indexOf(c.fecha) < 0) fechas.push(c.fecha);
+    const k = c.producto + "|" + c.fecha;
+    if (!(k in cuando) || String(c.cargado) >= String(cuando[k])) { cuando[k] = c.cargado; valor[k] = c.cantidad; }
+  });
+  fechas.sort().reverse();
+  const cols = fechas.slice(0, RESUMEN_FECHAS);
+
+  const productos = catalogo.map(function (p) { return p; });
+  conteos.forEach(function (c) {
+    if (!productos.some(function (p) { return p.nombre === c.producto; })) {
+      productos.push({ nombre: c.producto, categoria: c.categoria, grupo: c.grupo, unidad: c.unidad });
+    }
+  });
+  const ordenCat = function (c) { return c === "Bebidas" ? 0 : c === "Comida" ? 1 : 2; };
+  productos.sort(function (a, b) {
+    return ordenCat(a.categoria) - ordenCat(b.categoria) ||
+      (a.grupo === "Top 10" ? 0 : 1) - (b.grupo === "Top 10" ? 0 : 1) ||
+      a.nombre.localeCompare(b.nombre, "es", { numeric: true });
+  });
+
+  const header = ["Categoría", "Grupo", "Producto", "Unidad"].concat(cols.map(function (f) {
+    const p = f.split("-");
+    return p.length === 3 ? p[2] + "/" + p[1] + "/" + p[0] : f;
+  }));
+  const rows = [header].concat(productos.map(function (p) {
+    return [p.categoria, p.grupo, p.nombre, p.unidad].concat(cols.map(function (f) {
+      const k = p.nombre + "|" + f;
+      return k in valor ? valor[k] : "";
+    }));
+  }));
+
+  let sh = ss_().getSheetByName(SHEET_RESUMEN);
+  if (!sh) sh = ss_().insertSheet(SHEET_RESUMEN);
+  sh.clear();
+  sh.getRange(1, 1, rows.length, header.length).setValues(rows);
+  sh.setFrozenRows(1);
+  sh.setFrozenColumns(3);
+  sh.getRange(1, 1, 1, header.length).setFontWeight("bold");
 }
 
 function jsonOut_(obj) {
@@ -204,15 +220,13 @@ function jsonOut_(obj) {
 }
 
 function doGet(e) {
-  ensureConfigDefaults_();
   const action = (e && e.parameter && e.parameter.action) || "get_all";
   if (action === "get_all") {
-    const cfg = readConfig_();
     return jsonOut_({
-      movimientos: readMovimientos_(),
-      productos: readProductos_(),
-      tragos: readTragos_(),
-      unidades: cfg.unidades
+      conteos: readConteos_(),
+      productos: readCatalogo_(),
+      unidades: readUnidades_(),
+      planilla: ss_().getUrl()
     });
   }
   return jsonOut_({ error: "accion desconocida" });
@@ -237,30 +251,31 @@ function doPost(e) {
 
   const action = body.action;
   try {
-    ensureConfigDefaults_();
     // La app reintenta los envios que no pudo confirmar (por ejemplo sin
     // senal), asi que cada accion tiene que poder repetirse sin duplicar.
     if (action === "add") {
-      const sh = getSheet_(SHEET_MOV, MOV_HEADERS);
+      const sh = getSheet_(SHEET_CONTEOS, CONTEO_HEADERS);
       const existentes = {};
-      dataRows_(sh).forEach(function (r) { existentes[String(r[0])] = true; });
-      const nuevas = (body.movimientos || [])
-        .filter(function (m) { return m && m.id && !existentes[String(m.id)]; })
-        .map(movimientoToRow_);
+      readRows_(SHEET_CONTEOS).forEach(function (r) { existentes[String(r[0])] = true; });
+      const nuevas = (body.conteos || [])
+        .filter(function (c) { return c && c.id && !existentes[String(c.id)]; })
+        .map(conteoToRow_);
       if (nuevas.length) {
-        sh.getRange(sh.getLastRow() + 1, 1, nuevas.length, MOV_HEADERS.length).setValues(nuevas);
+        sh.getRange(sh.getLastRow() + 1, 1, nuevas.length, CONTEO_HEADERS.length).setValues(nuevas);
+        rebuildResumen_();
       }
 
-    } else if (action === "delete_group") {
+    } else if (action === "delete_carga") {
       if (QUIEN_PUEDE_BORRAR.indexOf(String(body.quien)) < 0) {
         return jsonOut_({ ok: false, error: "sin permiso para borrar", descartar: true });
       }
-      deleteRowsWhere_(getSheet_(SHEET_MOV, MOV_HEADERS), 11, body.grupo);
+      deleteRowsWhere_(getSheet_(SHEET_CONTEOS, CONTEO_HEADERS), 10, body.carga);
+      rebuildResumen_();
 
     } else if (action === "product_set") {
       const p = body.producto;
-      const sh = getSheet_(SHEET_PROD, PROD_HEADERS);
-      const row = [p.nombre, p.unidad || "", p.contenido || "", p.medida || ""];
+      const sh = getSheet_(SHEET_CATALOGO, CATALOGO_HEADERS);
+      const row = [p.nombre, p.categoria || "Bebidas", p.grupo || "Resto", p.unidad || ""];
       const data = sh.getDataRange().getValues();
       let found = -1;
       for (let i = 1; i < data.length; i++) {
@@ -268,31 +283,21 @@ function doPost(e) {
       }
       if (found > 0) sh.getRange(found, 1, 1, row.length).setValues([row]);
       else sh.appendRow(row);
+      rebuildResumen_();
 
     } else if (action === "product_remove") {
-      deleteRowsWhere_(getSheet_(SHEET_PROD, PROD_HEADERS), 0, body.nombre);
-
-    } else if (action === "trago_set") {
-      const t = body.trago;
-      const sh = getSheet_(SHEET_TRAGOS, TRAGO_HEADERS);
-      deleteRowsWhere_(sh, 0, t.nombre);
-      const rows = (t.ingredientes || []).map(function (i) {
-        return [t.nombre, i.producto, i.cantidad, i.en === "unidad" ? "unidad" : "medida"];
-      });
-      if (rows.length) sh.getRange(sh.getLastRow() + 1, 1, rows.length, TRAGO_HEADERS.length).setValues(rows);
-
-    } else if (action === "trago_remove") {
-      deleteRowsWhere_(getSheet_(SHEET_TRAGOS, TRAGO_HEADERS), 0, body.nombre);
+      deleteRowsWhere_(getSheet_(SHEET_CATALOGO, CATALOGO_HEADERS), 0, body.nombre);
+      rebuildResumen_();
 
     } else if (action === "config_add") {
-      const sh = getSheet_(SHEET_CONFIG, CONFIG_HEADERS);
-      const existe = dataRows_(sh).some(function (r) {
+      const sh = ensureUnidades_();
+      const existe = readRows_(SHEET_CONFIG).some(function (r) {
         return String(r[0]) === String(body.list) && String(r[1]) === String(body.value);
       });
       if (!existe) sh.appendRow([body.list, body.value]);
 
     } else if (action === "config_remove") {
-      const sh = getSheet_(SHEET_CONFIG, CONFIG_HEADERS);
+      const sh = ensureUnidades_();
       const data = sh.getDataRange().getValues();
       for (let i = data.length - 1; i >= 1; i--) {
         if (String(data[i][0]) === String(body.list) && String(data[i][1]) === String(body.value)) {
@@ -312,37 +317,4 @@ function doPost(e) {
   } finally {
     lock.releaseLock();
   }
-}
-
-// Carga productos y tragos de ejemplo para probar. Solo hace algo si la
-// hoja Productos esta vacia. Se ejecuta a mano desde el editor.
-function cargarEjemplo() {
-  const shP = getSheet_(SHEET_PROD, PROD_HEADERS);
-  if (shP.getLastRow() > 1) {
-    Logger.log("La hoja Productos ya tiene datos: no se cargo nada.");
-    return;
-  }
-  const productos = [
-    ["Fernet Branca 750 ml", "Botellas", 750, "ml"],
-    ["Gin Beefeater 700 ml", "Botellas", 700, "ml"],
-    ["Campari 750 ml", "Botellas", 750, "ml"],
-    ["Vermut Martini Rosso 1 l", "Botellas", 1000, "ml"],
-    ["Vodka Absolut 750 ml", "Botellas", 750, "ml"],
-    ["Vino Malbec Rutini", "Botellas", 750, "ml"]
-  ];
-  shP.getRange(2, 1, productos.length, PROD_HEADERS.length).setValues(productos);
-
-  const shT = getSheet_(SHEET_TRAGOS, TRAGO_HEADERS);
-  if (shT.getLastRow() <= 1) {
-    const tragos = [
-      ["Fernet con coca", "Fernet Branca 750 ml", 70, "medida"],
-      ["Gin tonic", "Gin Beefeater 700 ml", 60, "medida"],
-      ["Negroni", "Gin Beefeater 700 ml", 30, "medida"],
-      ["Negroni", "Campari 750 ml", 30, "medida"],
-      ["Negroni", "Vermut Martini Rosso 1 l", 30, "medida"],
-      ["Botella Malbec Rutini", "Vino Malbec Rutini", 1, "unidad"]
-    ];
-    shT.getRange(2, 1, tragos.length, TRAGO_HEADERS.length).setValues(tragos);
-  }
-  Logger.log("Listo: se cargaron productos y tragos de ejemplo.");
 }

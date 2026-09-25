@@ -14,6 +14,7 @@ que es solo un menú con links a cada app.
 | Carpeta | App |
 |---|---|
 | `stockbares/` | Stock de los bares de Noel (jefe de Ignacio). Ver abajo. |
+| `archivo/` | Versiones viejas guardadas por si se quieren recuperar. |
 | `molde/` | Molde de ingresos y gastos (copia de La Emilia sin nada del campo), base para apps nuevas. |
 
 Para una app nueva: copiar `molde/` a una carpeta nueva, cambiarle el
@@ -22,37 +23,36 @@ quiere armar.
 
 ## Stock de bares (`stockbares/`)
 
-- Pedido de **Noel** (dueño de los bares): controlar el stock de artículos
-  caros (botellas de alcohol; quizás productos de cocina) porque sospecha que
-  faltan botellas. Usuarios: **Noel** (controla todo), **Josefina** (hace las
-  compras y tiene facturas y remitos) y el **encargado** de cada bar. Ignacio
-  no usa la app.
-- **Una planilla (y un Apps Script) por bar**, todas de Noel. Así el
-  encargado de un bar no puede ver otro. El link de instalación lleva uno o
-  varios pares `vincular=<exec>&bar=<Nombre>` más `quien=<Persona>`; Noel
-  recibe un link con todos sus bares y ve un selector arriba. La persona del
-  link manda siempre (no se cambia desde la app). Los pendientes sin enviar
-  llevan el nombre del bar al que pertenecen.
-- Movimientos (hoja "Movimientos", una fila por producto, agrupadas por
-  `Grupo` = una carga): `compra`, `conteo`, `pase_sale`, `pase_entra`, `baja`
-  (motivo), `venta` (Producto = nombre del trago, cantidad = tragos vendidos).
-- Productos (hoja "Productos"): unidad en que se cuentan y cuánto trae cada
-  unidad (ej. 750 ml). Tragos (hoja "Tragos"): lo que lleva cada trago, en
-  ml/g o en unidades enteras (vino vendido por botella).
-- Control: conteo anterior + compras ± pases − bajas − consumo teórico de las
-  ventas = debería haber; se compara con el conteo nuevo. Movimientos con
-  fecha > conteo anterior y ≤ conteo nuevo (el conteo es "al cierre del día").
-  Si un producto se contó dos veces el mismo día, vale el último (así se
-  corrigen errores sin borrar).
-- Permisos en `PERMISOS` (index.html). Solo Noel borra (también lo exige el
-  Apps Script con `QUIEN_PUEDE_BORRAR`). El encargado no ve Control ni cargas
-  ajenas (conteo a ciegas). Las invitaciones se cargan en el sistema de ventas
-  a precio cero, así que ya vienen dentro de las ventas.
-- El control se hace los domingos. Pendiente de definir con Noel: cómo contar
-  las botellas abiertas (hoy se aceptan decimales, ej. 3,5).
-- Por ahora hay un solo bar: **Hugo**. La planilla de prueba es de la cuenta
-  de Ignacio; la definitiva la tiene que crear Noel con su cuenta (el Apps
-  Script funciona a nombre de quien lo implementa).
+- Pedido de **Noel** (dueño de los bares, jefe de Ignacio). **Solo registra el
+  stock contado a una fecha**: las compras y las ventas Noel ya las tiene en
+  su sistema de gestión, y la comparación la hace él. Primer bar: **Archie**.
+- La primera versión (compras, ventas por trago, pases, bajas y control de
+  faltantes) se sacó y quedó guardada en `archivo/stockbares-v1-control/`.
+- Flujo de carga (solo el **Encargado** carga): fecha → Bebidas o Comida →
+  Top 10 o Resto → lista de esos productos, cada uno con su casillero y la
+  unidad al lado → Guardar. Vuelve al paso de Top 10/Resto con ✓ en lo ya
+  cargado. Si se carga dos veces lo mismo para una fecha, vale lo último.
+  Al guardar avisa qué productos quedaron sin cargar.
+- **Noel** arma los productos en Config: nombre, categoría (Bebidas/Comida),
+  grupo (Top 10, máximo 10 por categoría, o Resto) y unidad. Ve el historial,
+  es el único que borra (también lo exige el Apps Script con
+  `QUIEN_PUEDE_BORRAR`) y tiene el botón "Abrir la planilla". Josefina
+  quedó con los mismos permisos que Noel salvo borrar.
+- Noel mira el stock en la planilla: hoja **Conteos** (un renglón por
+  producto contado) y hoja **Resumen**, que el Apps Script rearma después de
+  cada cambio (productos en filas, fechas en columnas, la más nueva primero).
+  Hoja **Catálogo**: los productos. Hoja **Config**: las unidades.
+- **Una planilla (y un Apps Script) por bar**, todas de Noel. El link de
+  instalación lleva uno o varios pares `vincular=<exec>&bar=<Nombre>` más
+  `quien=<Persona>`; Noel recibe un link con todos sus bares y ve un selector
+  arriba. La persona del link manda siempre. Si un link trae una planilla que
+  el celular ya tenía con otro nombre, se renombra (así pasó Hugo → Archie).
+- En el celular: caché `stockbares_bar_<bar>_cache_v2`, pendientes
+  `stockbares_pendientes_v2` (la v1 quedó sin usar).
+- La planilla de prueba es de la cuenta de Ignacio; la definitiva la tiene
+  que crear Noel con su cuenta (el Apps Script funciona a nombre de quien lo
+  implementa). Pendiente con Noel: cómo contar botellas abiertas (hoy se
+  aceptan decimales, ej. 3,5).
 
 ## Cómo trabajar con Ignacio
 
@@ -178,3 +178,6 @@ paso cuando llegue el momento.
   `oficina_`.
 - Septiembre 2026: primera app real, **stock de bares** (`stockbares/`), pedida
   por Noel. El molde pasó a `molde/` y cada app nueva va en su carpeta.
+- Septiembre 2026: Noel pidió que la app de stock sea solo para cargar el
+  conteo a una fecha (Bebidas/Comida, Top 10/Resto). Lo anterior pasó a
+  `archivo/`. El bar es Archie.
