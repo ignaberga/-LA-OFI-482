@@ -30,7 +30,7 @@ propia dirección:
   pasos están al principio del archivo). En la hoja **Resumen** se ven los
   productos en filas y las fechas en columnas.
 - **Un link por persona.** Noel arma la lista de productos y es el único que
-  puede borrar; el encargado es el único que carga.
+  puede borrar; cargan el stock el encargado y Noel.
 - La versión anterior (con compras, ventas y control de faltantes) está en
   [`archivo/`](archivo/).
 

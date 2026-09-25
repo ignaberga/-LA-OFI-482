@@ -28,7 +28,7 @@ quiere armar.
   su sistema de gestión, y la comparación la hace él. Primer bar: **Archie**.
 - La primera versión (compras, ventas por trago, pases, bajas y control de
   faltantes) se sacó y quedó guardada en `archivo/stockbares-v1-control/`.
-- Flujo de carga (solo el **Encargado** carga): fecha → Bebidas o Comida →
+- Flujo de carga (cargan el **Encargado** y **Noel**): fecha → Bebidas o Comida →
   Top 10 o Resto → lista de esos productos, cada uno con su casillero y la
   unidad al lado → Guardar. Vuelve al paso de Top 10/Resto con ✓ en lo ya
   cargado. Si se carga dos veces lo mismo para una fecha, vale lo último.
