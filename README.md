@@ -23,14 +23,14 @@ propia dirección:
 ## Stock de bares
 
 - Sirve para **cargar el stock contado a una fecha**. El encargado elige la
-  fecha, Bebidas o Comida, Top 10 o Resto, y anota la cantidad de cada
+  fecha, Barra o Cocina, Top 10 o Resto, y anota la cantidad de cada
   producto (la unidad aparece sola).
 - **Una planilla por bar**, cada una con el código de
   [`stockbares/apps-script/Code.gs`](stockbares/apps-script/Code.gs) (los
   pasos están al principio del archivo). En la hoja **Resumen** se ven los
   productos en filas y las fechas en columnas.
 - **Un link por persona.** Noel arma la lista de productos y es el único que
-  puede borrar; cargan el stock el encargado y Noel.
+  puede borrar o editar una carga; cargan el stock el encargado y Noel.
 - La versión anterior (con compras, ventas y control de faltantes) está en
   [`archivo/`](archivo/).
 

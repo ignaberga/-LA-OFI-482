@@ -5,7 +5,7 @@
 // La app le pide los datos (doGet) y le manda los cambios (doPost).
 // Crea sola las hojas que necesita:
 //   - "Conteos": cada producto contado, renglon por renglon.
-//   - "Catalogo": los productos (Bebidas/Comida, Top 10/Resto, unidad).
+//   - "Catalogo": los productos (Barra/Cocina, Top 10/Resto, unidad).
 //   - "Resumen": se arma sola despues de cada carga, con los productos
 //     en filas y las fechas en columnas. No escribir a mano en ella.
 //   - "Config": las unidades de medida.
@@ -36,7 +36,7 @@
 //    que volver a instalar la app en todos los celulares.)
 // ============================================================
 
-// Quienes pueden borrar cargas. Tiene que coincidir con los permisos
+// Quienes pueden borrar o editar cargas. Tiene que coincidir con los permisos
 // de la app (PERMISOS en stockbares/index.html).
 const QUIEN_PUEDE_BORRAR = ["Noel"];
 
@@ -89,6 +89,11 @@ function formatDateTime_(v) {
   return String(v);
 }
 
+// Las primeras pruebas guardaron "Bebidas" y "Comida". No se renombran en
+// la planilla: se leen con el nombre nuevo.
+const CAT_VIEJAS = { "Bebidas": "Barra", "Comida": "Cocina" };
+function cat_(v) { const c = String(v || "Barra"); return CAT_VIEJAS[c] || c; }
+
 function num_(v) {
   if (v === "" || v === null || v === undefined) return 0;
   const n = Number(String(v).replace(",", "."));
@@ -100,7 +105,7 @@ function readConteos_() {
     return {
       id: String(r[0]),
       fecha: formatDate_(r[1]),
-      categoria: String(r[2] || ""),
+      categoria: cat_(r[2]),
       grupo: String(r[3] || ""),
       producto: String(r[4]),
       cantidad: num_(r[5]),
@@ -117,7 +122,7 @@ function readCatalogo_() {
   return readRows_(SHEET_CATALOGO).filter(function (r) { return r[0] !== ""; }).map(function (r) {
     return {
       nombre: String(r[0]),
-      categoria: String(r[1] || "Bebidas"),
+      categoria: cat_(r[1]),
       grupo: String(r[2] || "Resto"),
       unidad: String(r[3] || "")
     };
@@ -188,7 +193,7 @@ function rebuildResumen_() {
       productos.push({ nombre: c.producto, categoria: c.categoria, grupo: c.grupo, unidad: c.unidad });
     }
   });
-  const ordenCat = function (c) { return c === "Bebidas" ? 0 : c === "Comida" ? 1 : 2; };
+  const ordenCat = function (c) { return c === "Barra" ? 0 : c === "Cocina" ? 1 : 2; };
   productos.sort(function (a, b) {
     return ordenCat(a.categoria) - ordenCat(b.categoria) ||
       (a.grupo === "Top 10" ? 0 : 1) - (b.grupo === "Top 10" ? 0 : 1) ||
@@ -272,10 +277,25 @@ function doPost(e) {
       deleteRowsWhere_(getSheet_(SHEET_CONTEOS, CONTEO_HEADERS), 10, body.carga);
       rebuildResumen_();
 
+    } else if (action === "replace_carga") {
+      // Corrige una carga: saca sus renglones y pone los corregidos (con el
+      // mismo numero de carga). Repetirlo deja el mismo resultado.
+      if (QUIEN_PUEDE_BORRAR.indexOf(String(body.quien)) < 0) {
+        return jsonOut_({ ok: false, error: "sin permiso para editar", descartar: true });
+      }
+      const sh = getSheet_(SHEET_CONTEOS, CONTEO_HEADERS);
+      deleteRowsWhere_(sh, 10, body.carga);
+      const nuevas = (body.conteos || []).filter(function (c) { return c && c.id; }).map(function (c) {
+        c.carga = body.carga;
+        return conteoToRow_(c);
+      });
+      if (nuevas.length) sh.getRange(sh.getLastRow() + 1, 1, nuevas.length, CONTEO_HEADERS.length).setValues(nuevas);
+      rebuildResumen_();
+
     } else if (action === "product_set") {
       const p = body.producto;
       const sh = getSheet_(SHEET_CATALOGO, CATALOGO_HEADERS);
-      const row = [p.nombre, p.categoria || "Bebidas", p.grupo || "Resto", p.unidad || ""];
+      const row = [p.nombre, p.categoria || "Barra", p.grupo || "Resto", p.unidad || ""];
       const data = sh.getDataRange().getValues();
       let found = -1;
       for (let i = 1; i < data.length; i++) {

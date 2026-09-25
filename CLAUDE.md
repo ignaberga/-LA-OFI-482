@@ -28,15 +28,19 @@ quiere armar.
   su sistema de gestión, y la comparación la hace él. Primer bar: **Archie**.
 - La primera versión (compras, ventas por trago, pases, bajas y control de
   faltantes) se sacó y quedó guardada en `archivo/stockbares-v1-control/`.
-- Flujo de carga (cargan el **Encargado** y **Noel**): fecha → Bebidas o Comida →
+- Flujo de carga (cargan el **Encargado** y **Noel**): fecha → Barra o Cocina →
   Top 10 o Resto → lista de esos productos, cada uno con su casillero y la
   unidad al lado → Guardar. Vuelve al paso de Top 10/Resto con ✓ en lo ya
   cargado. Si se carga dos veces lo mismo para una fecha, vale lo último.
   Al guardar avisa qué productos quedaron sin cargar.
-- **Noel** arma los productos en Config: nombre, categoría (Bebidas/Comida),
-  grupo (Top 10, máximo 10 por categoría, o Resto) y unidad. Ve el historial,
-  es el único que borra (también lo exige el Apps Script con
-  `QUIEN_PUEDE_BORRAR`) y tiene el botón "Abrir la planilla". Josefina
+- **Noel** arma los productos en Config: nombre, categoría (Barra/Cocina; las primeras pruebas se guardaron como
+  Bebidas/Comida y se leen con el nombre nuevo, sin renombrar la planilla),
+  grupo (Top 10, máximo 10 por categoría, o Resto) y unidad. En Config cada grupo (Barra · Top 10,
+  etc.) es una lista desplegable. Ve el historial, es el único que borra o
+  edita una carga (al editar, la carga sigue a nombre de quien la hizo y la
+  nota dice "editado por Noel"), (también lo exige el Apps Script con
+  `QUIEN_PUEDE_BORRAR`) y tiene el botón "Abrir la planilla" en Config
+  (no en Inicio). Josefina
   quedó con los mismos permisos que Noel salvo borrar.
 - Noel mira el stock en la planilla: hoja **Conteos** (un renglón por
   producto contado) y hoja **Resumen**, que el Apps Script rearma después de

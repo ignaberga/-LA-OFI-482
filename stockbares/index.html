@@ -93,6 +93,7 @@
   .tag { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 20px; display: inline-block; }
   .tag.bebidas { background: var(--blue-bg); color: var(--blue); }
   .tag.comida { background: var(--green-bg); color: var(--green); }
+  .btn-edit { margin-top: 10px; width: 100%; padding: 10px 0; border-radius: 10px; border: 1px solid var(--wine); background: transparent; color: var(--wine-dark); font-weight: 700; font-size: 14px; }
   .btn-del { margin-top: 10px; width: 100%; padding: 10px 0; border-radius: 10px; border: 1px solid var(--rust); background: transparent; color: var(--rust); font-weight: 700; font-size: 14px; }
   .btn-more { margin: 12px 20px 0; width: calc(100% - 40px); padding: 12px 0; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); color: var(--ink-soft); font-weight: 600; font-size: 14px; }
 
@@ -172,8 +173,11 @@
   .accordion-meta { font-size: 13px; color: var(--ink-soft); font-weight: 600; }
   .accordion-body { display: none; background: var(--surface); border: 1px solid var(--line); border-top: none; border-radius: 0 0 12px 12px; padding: 12px 14px 14px; }
   .accordion-body.open { display: block; }
-  .cfg-sub { font-size: 13px; font-weight: 700; color: var(--ink-soft); margin: 14px 0 8px; }
-  .cfg-sub:first-child { margin-top: 0; }
+  details.cfg-group { border: 1px solid var(--line); border-radius: 12px; margin-bottom: 10px; background: var(--surface); }
+  details.cfg-group summary { list-style: none; display: flex; justify-content: space-between; align-items: center; padding: 13px 14px; font-size: 15px; font-weight: 700; }
+  details.cfg-group summary::-webkit-details-marker { display: none; }
+  details.cfg-group .cfg-count { font-size: 13px; color: var(--ink-soft); font-weight: 600; }
+  details.cfg-group > .cfg-list, details.cfg-group > .help-text { padding: 0 12px 12px; }
   .cfg-list { display: flex; flex-direction: column; gap: 8px; }
   .cfg-row {
     display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; text-align: left;
@@ -218,8 +222,7 @@
   <!-- INICIO -->
   <div id="tab-inicio" class="tab-panel active">
     <div class="sync-banner" id="syncBanner"></div>
-    <button class="big-btn" id="openCarga" style="display:none">Cargar stock<small>Bebidas o comida, a una fecha</small></button>
-    <a class="link-btn" id="openSheet" target="_blank" rel="noopener" style="display:none">Abrir la planilla<small>Ahí está el resumen con todas las fechas</small></a>
+    <button class="big-btn" id="openCarga" style="display:none">Cargar stock<small>Barra o cocina, a una fecha</small></button>
     <div class="info-card" id="lastCard" style="display:none"></div>
     <div class="section-title" id="recentTitle">Últimas cargas</div>
     <div class="groups" id="recentList"></div>
@@ -242,7 +245,7 @@
           <span>Productos</span><span class="accordion-meta" id="countProductos">0</span>
         </button>
         <div class="accordion-body" id="bodyProductos">
-          <div class="help-text">Cada producto va en Bebidas o Comida, en el Top 10 (hasta 10 por categoría) o en el Resto, y con la unidad en que se cuenta. Tocá uno para cambiarlo.</div>
+          <div class="help-text">Cada producto va en Barra o Cocina, en el Top 10 (hasta 10 por categoría) o en el Resto, y con la unidad en que se cuenta. Tocá uno para cambiarlo.</div>
           <div id="productList"></div>
           <button class="btn-main" id="newProduct">+ Nuevo producto</button>
         </div>
@@ -268,6 +271,7 @@
       <div class="section-title">Planilla de Google</div>
       <div class="link-state" id="linkState"></div>
       <div class="help-text" id="lastSyncText"></div>
+      <a class="btn-outline" id="openSheet" target="_blank" rel="noopener" style="display:none; text-align:center; text-decoration:none;">Abrir la planilla</a>
       <button class="btn-outline" id="syncNowBtn">Actualizar ahora</button>
     </div>
     <div class="config-section" id="backupSection">
@@ -321,6 +325,10 @@
       </div>
 
       <div id="wStep4" style="display:none">
+        <div class="field" id="wFechaEditWrap" style="display:none;">
+          <label>Fecha del stock</label>
+          <input type="date" id="wFechaEdit">
+        </div>
         <div id="wDone"></div>
         <div class="help-text">Contá lo que hay y anotalo. Si no hay ninguno, poné 0.</div>
         <input type="search" id="wBuscar" placeholder="Buscar…" style="display:none; width:100%; padding:12px 13px; border-radius:10px; border:1px solid var(--line); font-size:16px; background:var(--bg); margin-bottom:8px; font-family:inherit;">
@@ -388,7 +396,7 @@ const APP_NAME = "Stock";
 //   cargar: carga el stock.
 //   ver_todo: ve las cargas de todos y el botón para abrir la planilla.
 //   config: arma la lista de productos y las unidades.
-//   borrar: puede borrar cargas (tiene que coincidir con
+//   borrar: puede borrar y editar cargas (tiene que coincidir con
 //           QUIEN_PUEDE_BORRAR del Apps Script).
 const PERMISOS = {
   "Noel": ["cargar", "ver_todo", "config", "borrar"],
@@ -403,7 +411,12 @@ const KEY_PREFIX = "stockbares_";
 // Unidades de arranque. Tienen que coincidir con DEFAULT_CONFIG del
 // Apps Script (stockbares/apps-script/Code.gs).
 const DEFAULT_UNITS = ["Botellas", "Kilos", "Unidades"];
-const CATEGORIAS = ["Bebidas", "Comida"];
+const CATEGORIAS = ["Barra", "Cocina"];
+// Nombres viejos de las categorías (así se guardaron las primeras pruebas).
+// No se renombran en la planilla: se leen con el nombre nuevo.
+const CAT_VIEJAS = { "Bebidas": "Barra", "Comida": "Cocina" };
+function normCat(c) { return CAT_VIEJAS[c] || c; }
+function normData(list) { return (list || []).map(x => Object.assign({}, x, { categoria: normCat(x.categoria) })); }
 const GRUPOS = ["Top 10", "Resto"];
 const TOP_MAX = 10;
 
@@ -483,8 +496,8 @@ function loadLocalCache() {
   if (!curBarName) return;
   const c = lsJson(cacheKey(curBarName), null);
   if (!c) return;
-  if (Array.isArray(c.conteos)) conteos = c.conteos;
-  if (Array.isArray(c.productos)) productos = c.productos;
+  if (Array.isArray(c.conteos)) conteos = normData(c.conteos);
+  if (Array.isArray(c.productos)) productos = normData(c.productos);
   if (Array.isArray(c.unidades) && c.unidades.length) UNITS = c.unidades;
   if (typeof c.planilla === "string") planillaUrl = c.planilla;
 }
@@ -527,6 +540,10 @@ function isApplied(op, data) {
   switch (op.action) {
     case "add": return p.conteos.every(c => data.conteos.some(x => sameId(x.id, c.id)));
     case "delete_carga": return !data.conteos.some(x => sameId(x.carga, p.carga));
+    case "replace_carga": {
+      const ids = data.conteos.filter(x => sameId(x.carga, p.carga)).map(x => String(x.id)).sort().join("|");
+      return ids === p.conteos.map(c => String(c.id)).sort().join("|");
+    }
     case "product_set": return data.productos.some(x => sameProduct(x, p.producto));
     case "product_remove": return !data.productos.some(x => x.nombre === p.nombre);
     case "config_add": return (data.unidades || []).some(v => String(v) === String(p.value));
@@ -544,6 +561,9 @@ function applyOp(op) {
       break;
     case "delete_carga":
       conteos = conteos.filter(x => !sameId(x.carga, p.carga));
+      break;
+    case "replace_carga":
+      conteos = conteos.filter(x => !sameId(x.carga, p.carga)).concat(p.conteos);
       break;
     case "product_set": {
       const i = productos.findIndex(x => x.nombre === p.producto.nombre);
@@ -628,8 +648,8 @@ async function fetchAllFromSheet() {
     }
     if (drop.size) { outbox = outbox.filter(o => !drop.has(o.opId)); saveOutbox(); }
 
-    conteos = data.conteos;
-    productos = data.productos;
+    conteos = normData(data.conteos);
+    productos = normData(data.productos);
     if (Array.isArray(data.unidades) && data.unidades.length) UNITS = data.unidades;
     if (typeof data.planilla === "string") planillaUrl = data.planilla;
     applyOutboxLocally();
@@ -673,7 +693,7 @@ function parseQty(s) {
 }
 function norm(s) { return String(s).toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, ""); }
 function unitLabel(u) { return String(u || "").toLowerCase(); }
-function catCls(c) { return c === "Comida" ? "comida" : "bebidas"; }
+function catCls(c) { return normCat(c) === "Cocina" ? "comida" : "bebidas"; }
 
 let toastTimer = null;
 function showToast(msg) {
@@ -726,7 +746,8 @@ function cargaHtml(g) {
   const lines = g.items.slice().sort((a, b) => a.producto.localeCompare(b.producto, "es", { numeric: true })).map(c =>
     '<div class="g-line"><span>' + esc(c.producto) + '</span><span class="q">' + fmtN(c.cantidad) + " " + esc(unitLabel(c.unidad)) + '</span></div>').join("");
   const hora = g.cargado && g.cargado.length >= 16 ? " · cargado " + dayLabel(g.cargado.slice(0, 10)) + " " + g.cargado.slice(11, 16) : "";
-  const del = can("borrar") ? '<button class="btn-del" data-del="' + esc(g.id) + '">Borrar esta carga</button>' : "";
+  const del = can("borrar") ? '<button class="btn-edit" data-edit="' + esc(g.id) + '">Editar esta carga</button>' +
+    '<button class="btn-del" data-del="' + esc(g.id) + '">Borrar esta carga</button>' : "";
   const n = g.items.length;
   return '<details class="group"><summary>' +
       '<div class="g-left"><div class="g-title"><span class="tag ' + catCls(g.categoria) + '">' + esc(g.categoria) + ' · ' + esc(g.grupo) + '</span> ' + esc(dayLabel(g.fecha)) + '</div>' +
@@ -739,6 +760,11 @@ function renderCargas(containerId, list, emptyText) {
   const c = document.getElementById(containerId);
   if (!list.length) { c.innerHTML = '<div class="empty-state">' + emptyText + '</div>'; return; }
   c.innerHTML = list.map(cargaHtml).join("");
+  c.querySelectorAll("[data-edit]").forEach(btn => btn.addEventListener("click", () => {
+    const id = btn.getAttribute("data-edit");
+    const g = cargasOf(conteos.filter(x => sameId(x.carga || x.id, id)))[0];
+    if (g) openEdicion(g);
+  }));
   c.querySelectorAll("[data-del]").forEach(btn => btn.addEventListener("click", () => {
     const id = btn.getAttribute("data-del");
     const g = cargasOf(conteos.filter(x => sameId(x.carga || x.id, id)))[0];
@@ -771,9 +797,6 @@ function renderHeader() {
 
 function renderInicio() {
   document.getElementById("openCarga").style.display = can("cargar") ? "block" : "none";
-  const sheet = document.getElementById("openSheet");
-  sheet.style.display = can("ver_todo") && planillaUrl ? "block" : "none";
-  if (planillaUrl) sheet.href = planillaUrl;
   const card = document.getElementById("lastCard");
   const fechas = Array.from(new Set(conteos.map(c => c.fecha))).sort();
   if (can("ver_todo") && fechas.length) {
@@ -788,7 +811,7 @@ let historyLimit = 30;
 function renderHistorial() {
   const sel = document.getElementById("filterCat");
   const v = sel.value;
-  const opts = [["", "Bebidas y comida"]];
+  const opts = [["", "Barra y cocina"]];
   CATEGORIAS.forEach(c => { opts.push([c + "|", "Solo " + c.toLowerCase()]); GRUPOS.forEach(g => opts.push([c + "|" + g, c + " · " + g])); });
   sel.innerHTML = opts.map(o => '<option value="' + esc(o[0]) + '"' + (o[0] === v ? " selected" : "") + '>' + esc(o[1]) + '</option>').join("");
   let list = visibles();
@@ -801,22 +824,33 @@ function renderHistorial() {
   document.getElementById("historyMore").style.display = cargas.length > historyLimit ? "block" : "none";
 }
 
+// Qué listas de productos están abiertas en Config (para no cerrarlas al actualizar).
+const cfgAbiertos = new Set();
 function renderConfig() {
   document.getElementById("cfgAdmin").style.display = can("config") ? "block" : "none";
   document.getElementById("backupSection").style.display = can("ver_todo") ? "block" : "none";
+  const sheet = document.getElementById("openSheet");
+  sheet.style.display = can("ver_todo") && planillaUrl ? "block" : "none";
+  if (planillaUrl) sheet.href = planillaUrl;
   document.getElementById("countProductos").textContent = productos.length;
   document.getElementById("countUnidades").textContent = UNITS.length;
 
   let html = "";
   CATEGORIAS.forEach(cat => GRUPOS.forEach(g => {
     const l = productosDe(cat, g);
-    html += '<div class="cfg-sub">' + esc(cat) + ' · ' + esc(g) + (g === "Top 10" ? " (" + l.length + " de " + TOP_MAX + ")" : " (" + l.length + ")") + '</div>';
+    const key = cat + "|" + g;
+    html += '<details class="cfg-group" data-key="' + esc(key) + '"' + (cfgAbiertos.has(key) ? " open" : "") + '><summary><span>' + esc(cat) + ' · ' + esc(g) + '</span>' +
+      '<span class="cfg-count">' + (g === "Top 10" ? l.length + " de " + TOP_MAX : l.length) + ' ▾</span></summary>';
     html += l.length ? '<div class="cfg-list">' + l.map(p =>
       '<button class="cfg-row" data-prod="' + esc(p.nombre) + '"><div><div class="n">' + esc(p.nombre) + '</div><div class="d">' + esc(p.unidad) + '</div></div><span>›</span></button>'
     ).join("") + '</div>' : '<div class="help-text" style="margin:0;">Nada todavía.</div>';
+    html += '</details>';
   }));
   const pl = document.getElementById("productList");
   pl.innerHTML = html;
+  pl.querySelectorAll("details.cfg-group").forEach(d => d.addEventListener("toggle", () => {
+    if (d.open) cfgAbiertos.add(d.getAttribute("data-key")); else cfgAbiertos.delete(d.getAttribute("data-key"));
+  }));
   pl.querySelectorAll("[data-prod]").forEach(b => b.addEventListener("click", () => openProduct(prodByName(b.getAttribute("data-prod")))));
 
   const ul = document.getElementById("unitList");
@@ -925,8 +959,11 @@ function closeOverlay(id) { document.getElementById(id).classList.remove("open")
 // CARGAR STOCK: fecha → categoría → grupo → cantidades
 // ============================================================
 let wStep = 1, wFecha = "", wCat = "", wGrupo = "";
+// Si se está corrigiendo una carga ya guardada, es esa carga; si no, null.
+let editando = null;
 
 function openCarga() {
+  editando = null;
   wStep = 1; wFecha = todayStr(); wCat = ""; wGrupo = "";
   document.getElementById("wFecha").value = wFecha;
   document.getElementById("cargaOverlay").classList.add("open");
@@ -946,8 +983,10 @@ function renderWizard() {
   if (wStep > 2) crumb.push(wCat);
   if (wStep > 3) crumb.push(wGrupo);
   document.getElementById("wCrumb").textContent = crumb.join(" · ");
-  document.getElementById("wTitle").textContent =
+  document.getElementById("wTitle").textContent = editando ? "Editar carga" :
     wStep === 1 ? "Cargar stock" : wStep === 2 ? "¿Qué vas a contar?" : wStep === 3 ? "¿Qué parte?" : "Cantidades";
+  document.getElementById("wFechaEditWrap").style.display = editando && wStep === 4 ? "block" : "none";
+  document.querySelector('#wStep4 [data-back="3"]').textContent = editando ? "Cancelar" : "‹ Volver";
 
   if (wStep === 2) {
     const c = document.getElementById("wCats");
@@ -975,7 +1014,7 @@ function renderWizard() {
 
 function openLista() {
   const lista = productosDe(wCat, wGrupo);
-  const h = cargaHecha(wFecha, wCat, wGrupo);
+  const h = editando ? null : cargaHecha(wFecha, wCat, wGrupo);
   document.getElementById("wDone").innerHTML = h
     ? '<div class="note-done">Esta parte ya se cargó para esta fecha (' + esc(h.persona) + ', ' + esc(String(h.cargado).slice(11, 16)) + '). Si la cargás de nuevo, vale lo último.</div>' : "";
   const buscar = document.getElementById("wBuscar");
@@ -993,6 +1032,28 @@ function openLista() {
   goStep(4);
 }
 
+// Abre una carga ya guardada con sus cantidades, para corregirla.
+function openEdicion(g) {
+  editando = g;
+  wFecha = g.fecha; wCat = normCat(g.categoria); wGrupo = g.grupo;
+  document.getElementById("cargaOverlay").classList.add("open");
+  openLista();
+  document.getElementById("wFechaEdit").value = g.fecha;
+  // Si un producto ya no está en la lista, se muestra igual para poder corregirlo.
+  const box = document.getElementById("wLista");
+  g.items.forEach(c => {
+    if (!box.querySelector('input[data-item="' + CSS.escape(c.producto) + '"]')) {
+      box.insertAdjacentHTML("beforeend", '<div class="q-row" data-name="' + esc(norm(c.producto)) + '"><div class="q-name">' + esc(c.producto) +
+        '<small>' + esc(unitLabel(c.unidad)) + '</small></div><input type="text" inputmode="decimal" autocomplete="off" data-item="' + esc(c.producto) + '" placeholder="Cant."></div>');
+    }
+    const inp = box.querySelector('input[data-item="' + CSS.escape(c.producto) + '"]');
+    inp.value = String(c.cantidad).replace(".", ",");
+    inp.closest(".q-row").classList.add("filled");
+  });
+  document.getElementById("wNota").value = (g.nota || "").replace(/ ?\(editado por [^)]*\)$/, "");
+  document.getElementById("wDone").innerHTML = '<div class="note-done">Estás corrigiendo lo que cargó ' + esc(g.persona) + '. En la planilla queda anotado que lo editaste vos.</div>';
+}
+
 document.getElementById("wBuscar").addEventListener("input", (e) => {
   const q = norm(e.target.value.trim());
   document.querySelectorAll("#wLista .q-row").forEach(r => { r.style.display = !q || r.getAttribute("data-name").includes(q) ? "flex" : "none"; });
@@ -1004,7 +1065,10 @@ document.getElementById("wNext1").addEventListener("click", () => {
   wFecha = f;
   goStep(2);
 });
-document.querySelectorAll("#cargaOverlay [data-back]").forEach(b => b.addEventListener("click", () => goStep(Number(b.getAttribute("data-back")))));
+document.querySelectorAll("#cargaOverlay [data-back]").forEach(b => b.addEventListener("click", () => {
+  if (editando) { editando = null; closeOverlay("cargaOverlay"); return; }
+  goStep(Number(b.getAttribute("data-back")));
+}));
 document.querySelectorAll("#cargaOverlay [data-close]").forEach(b => b.addEventListener("click", () => closeOverlay("cargaOverlay")));
 
 function wErr(msg) { const e = document.getElementById("wErr"); e.textContent = msg; e.style.display = "block"; }
@@ -1022,6 +1086,7 @@ document.getElementById("wSave").addEventListener("click", () => {
   });
   if (bad) { wErr("Revisá la cantidad de «" + bad + "»: tiene que ser un número (ej: 3 o 2,5)."); return; }
   if (!items.length) { wErr("Anotá la cantidad de al menos un producto. Si no hay ninguno, poné 0."); return; }
+  if (editando) { guardarEdicion(items, faltan); return; }
   if (faltan.length && !confirm("No cargaste " + (faltan.length === 1 ? "este producto" : "estos " + faltan.length + " productos") + ":\n\n" +
     faltan.slice(0, 12).map(n => "• " + n).join("\n") + (faltan.length > 12 ? "\n…y " + (faltan.length - 12) + " más" : "") +
     "\n\nSi no hay ninguno, poné 0. ¿Guardar igual?")) return;
@@ -1043,10 +1108,36 @@ document.getElementById("wSave").addEventListener("click", () => {
   goStep(3);
 });
 
+function guardarEdicion(items, faltan) {
+  const g = editando;
+  const fecha = document.getElementById("wFechaEdit").value;
+  if (!fecha) { wErr("Elegí la fecha."); return; }
+  const sacados = g.items.filter(c => faltan.includes(c.producto)).map(c => c.producto);
+  if (sacados.length && !confirm("Dejaste vacío " + (sacados.length === 1 ? "este producto, que se va a sacar" : "estos productos, que se van a sacar") + " de la carga:\n\n" +
+    sacados.map(n => "• " + n).join("\n") + "\n\n¿Seguir?")) return;
+  const d = new Date();
+  const marca = " (editado por " + phoneOwner + " " + d.getDate() + "/" + (d.getMonth() + 1) + " " + pad2(d.getHours()) + ":" + pad2(d.getMinutes()) + ")";
+  const nota = document.getElementById("wNota").value.trim() + marca;
+  const sufijo = "-e" + Date.now().toString(36);
+  const nuevos = items.map((it, i) => {
+    const p = prodByName(it.nombre);
+    const antes = g.items.find(c => c.producto === it.nombre);
+    return {
+      id: g.id + sufijo + "-" + i, carga: g.id, fecha, categoria: wCat, grupo: wGrupo,
+      producto: it.nombre, cantidad: it.cantidad, unidad: p ? p.unidad : (antes ? antes.unidad : ""),
+      persona: g.persona, nota: nota.trim(), cargado: g.cargado
+    };
+  });
+  editando = null;
+  closeOverlay("cargaOverlay");
+  queueChange("replace_carga", { carga: g.id, conteos: nuevos, quien: phoneOwner });
+  showToast("Carga corregida ✓");
+}
+
 // ============================================================
 // PRODUCTOS
 // ============================================================
-let editingProduct = null, pCat = "Bebidas", pGrupo = "Resto";
+let editingProduct = null, pCat = "Barra", pGrupo = "Resto";
 
 function renderProductToggles() {
   document.getElementById("pCat").innerHTML = CATEGORIAS.map(c => '<button type="button" data-c="' + esc(c) + '"' + (c === pCat ? ' class="sel"' : "") + '>' + esc(c) + '</button>').join("");
@@ -1068,7 +1159,7 @@ function openProduct(p) {
   const nombre = document.getElementById("pNombre");
   nombre.value = p ? p.nombre : "";
   nombre.disabled = !!p;
-  pCat = p ? p.categoria : "Bebidas";
+  pCat = p ? normCat(p.categoria) : "Barra";
   pGrupo = p ? p.grupo : "Resto";
   renderProductToggles();
   const units = UNITS.slice();
