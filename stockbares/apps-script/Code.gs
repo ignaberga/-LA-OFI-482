@@ -9,6 +9,8 @@
 //   - "Resumen": se arma sola despues de cada carga, con los productos
 //     en filas y las fechas en columnas. No escribir a mano en ella.
 //   - "Config": las unidades de medida.
+//   - "Cierres": los dias cuyo stock ya se cerro. Un stock cerrado no se
+//     puede modificar; solo Noel lo puede reabrir.
 //
 // Este archivo es una copia de respaldo: el que funciona de verdad
 // es el que esta pegado dentro de la planilla. La direccion /exec
@@ -36,18 +38,22 @@
 //    que volver a instalar la app en todos los celulares.)
 // ============================================================
 
-// Quienes pueden borrar o editar cargas. Tiene que coincidir con los permisos
-// de la app (PERMISOS en stockbares/index.html).
+// Quienes pueden reabrir un stock cerrado y borrar un dia. Tiene que
+// coincidir con los permisos de la app (PERMISOS en stockbares/index.html).
 const QUIEN_PUEDE_BORRAR = ["Noel"];
+// Quienes pueden cerrar el stock de un dia.
+const PUEDEN_CERRAR = ["Encargado", "Noel"];
 
 const SHEET_CONTEOS = "Conteos";
 const SHEET_CATALOGO = "Catálogo";
 const SHEET_RESUMEN = "Resumen";
 const SHEET_CONFIG = "Config";
+const SHEET_CIERRES = "Cierres";
 
 const CONTEO_HEADERS = ["ID","Fecha","Categoría","Grupo","Producto","Cantidad","Unidad","Persona","Nota","Cargado","Carga"];
 const CATALOGO_HEADERS = ["Producto","Categoría","Grupo","Unidad"];
 const CONFIG_HEADERS = ["Tipo","Valor"];
+const CIERRES_HEADERS = ["Fecha","Cerrado por","Cuándo"];
 
 const DEFAULT_CONFIG = {
   unidades: ["Botellas","Kilos","Unidades"]
@@ -132,6 +138,22 @@ function readCatalogo_() {
   });
 }
 
+function readCierres_() {
+  return readRows_(SHEET_CIERRES).filter(function (r) { return r[0] !== ""; }).map(function (r) {
+    return { fecha: formatDate_(r[0]), persona: String(r[1] || ""), cuando: formatDateTime_(r[2]) };
+  });
+}
+
+function fechasCerradas_() {
+  const out = {};
+  readCierres_().forEach(function (c) { out[c.fecha] = true; });
+  return out;
+}
+
+function ahora_() {
+  return Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy-MM-dd HH:mm:ss");
+}
+
 function readUnidades_() {
   const out = [];
   readRows_(SHEET_CONFIG).forEach(function (r) {
@@ -152,12 +174,21 @@ function ensureUnidades_() {
 // Borra las filas cuya columna col coincide, de abajo hacia arriba y en
 // tramos seguidos para que sea rapido.
 function deleteRowsWhere_(sh, col, value) {
+  deleteRowsIf_(sh, function (r) { return String(r[col]) === String(value); });
+}
+
+// Borra las filas de una fecha (la columna col tiene fechas).
+function deleteRowsDeFecha_(sh, col, fecha) {
+  deleteRowsIf_(sh, function (r) { return formatDate_(r[col]) === String(fecha); });
+}
+
+function deleteRowsIf_(sh, pasa) {
   const data = sh.getDataRange().getValues();
   let i = data.length - 1;
   while (i >= 1) {
-    if (String(data[i][col]) === String(value)) {
+    if (pasa(data[i])) {
       let start = i;
-      while (start - 1 >= 1 && String(data[start - 1][col]) === String(value)) start--;
+      while (start - 1 >= 1 && pasa(data[start - 1])) start--;
       sh.deleteRows(start + 1, i - start + 1);
       i = start - 1;
     } else {
@@ -215,11 +246,12 @@ function rebuildResumen_() {
     return null;
   };
 
+  const cerradas = fechasCerradas_();
   const FIJAS = 4;
   const header = ["Categoría", "Grupo", "Producto", "Unidad"];
   cols.forEach(function (f) {
     const p = f.split("-");
-    header.push(p.length === 3 ? p[2] + "/" + p[1] + "/" + p[0] : f);
+    header.push((p.length === 3 ? p[2] + "/" + p[1] + "/" + p[0] : f) + (cerradas[f] ? " (cerrado)" : ""));
     header.push("Dif.");
   });
   const rows = [header];
@@ -277,6 +309,7 @@ function doGet(e) {
       conteos: readConteos_(),
       productos: readCatalogo_(),
       unidades: readUnidades_(),
+      cierres: readCierres_(),
       planilla: ss_().getUrl()
     });
   }
@@ -305,6 +338,10 @@ function doPost(e) {
     // La app reintenta los envios que no pudo confirmar (por ejemplo sin
     // senal), asi que cada accion tiene que poder repetirse sin duplicar.
     if (action === "add") {
+      const cerradas = fechasCerradas_();
+      if ((body.conteos || []).some(function (c) { return c && cerradas[c.fecha]; })) {
+        return jsonOut_({ ok: false, error: "el stock de ese dia esta cerrado", descartar: true });
+      }
       const sh = getSheet_(SHEET_CONTEOS, CONTEO_HEADERS);
       const existentes = {};
       readRows_(SHEET_CONTEOS).forEach(function (r) { existentes[String(r[0])] = true; });
@@ -321,6 +358,30 @@ function doPost(e) {
         return jsonOut_({ ok: false, error: "sin permiso para borrar", descartar: true });
       }
       deleteRowsWhere_(getSheet_(SHEET_CONTEOS, CONTEO_HEADERS), 10, body.carga);
+      rebuildResumen_();
+
+    } else if (action === "cerrar") {
+      if (PUEDEN_CERRAR.indexOf(String(body.quien)) < 0) {
+        return jsonOut_({ ok: false, error: "sin permiso para cerrar", descartar: true });
+      }
+      if (!fechasCerradas_()[body.fecha]) {
+        getSheet_(SHEET_CIERRES, CIERRES_HEADERS).appendRow([body.fecha, body.quien, ahora_()]);
+        rebuildResumen_();
+      }
+
+    } else if (action === "reabrir") {
+      if (QUIEN_PUEDE_BORRAR.indexOf(String(body.quien)) < 0) {
+        return jsonOut_({ ok: false, error: "sin permiso para reabrir", descartar: true });
+      }
+      deleteRowsDeFecha_(getSheet_(SHEET_CIERRES, CIERRES_HEADERS), 0, body.fecha);
+      rebuildResumen_();
+
+    } else if (action === "delete_dia") {
+      if (QUIEN_PUEDE_BORRAR.indexOf(String(body.quien)) < 0) {
+        return jsonOut_({ ok: false, error: "sin permiso para borrar", descartar: true });
+      }
+      deleteRowsDeFecha_(getSheet_(SHEET_CONTEOS, CONTEO_HEADERS), 1, body.fecha);
+      deleteRowsDeFecha_(getSheet_(SHEET_CIERRES, CIERRES_HEADERS), 0, body.fecha);
       rebuildResumen_();
 
     } else if (action === "replace_carga") {

@@ -29,8 +29,10 @@ propia dirección:
   [`stockbares/apps-script/Code.gs`](stockbares/apps-script/Code.gs) (los
   pasos están al principio del archivo). En la hoja **Resumen** se ven los
   productos en filas y las fechas en columnas.
-- **Un link por persona.** Noel arma la lista de productos y es el único que
-  puede borrar o editar una carga; cargan el stock el encargado y Noel.
+- **Un stock por día**, que se completa y corrige hasta que el encargado lo
+  **cierra**. Cerrado, nadie lo modifica: solo Noel lo puede reabrir.
+- **Un link por persona.** Noel arma la lista de productos, reabre y borra
+  días; cargan y cierran el stock el encargado y Noel.
 - La versión anterior (con compras, ventas y control de faltantes) está en
   [`archivo/`](archivo/).
 

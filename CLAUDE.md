@@ -28,26 +28,30 @@ quiere armar.
   su sistema de gestión, y la comparación la hace él. Primer bar: **Archie**.
 - La primera versión (compras, ventas por trago, pases, bajas y control de
   faltantes) se sacó y quedó guardada en `archivo/stockbares-v1-control/`.
-- Flujo de carga (cargan el **Encargado** y **Noel**): fecha → Barra o Cocina →
-  Top 10 o Resto → lista de esos productos, cada uno con su casillero y la
-  unidad al lado → Guardar. Vuelve al paso de Top 10/Resto con ✓ en lo ya
-  cargado. Si se carga dos veces lo mismo para una fecha, vale lo último.
-  Al guardar avisa qué productos quedaron sin cargar.
+- **Un solo stock por día.** Flujo (cargan el **Encargado** y **Noel**):
+  fecha → Barra o Cocina → Top 10 o Resto → lista de esos productos con su
+  casillero y la unidad (botellas con botones +¼ +½ +¾) → Guardar. Si la
+  fecha ya tiene stock, se abre ese mismo con lo cargado para completar o
+  corregir; se guardan solo los cambios (nuevos renglones en Conteos, vale
+  el último de cada producto en esa fecha). Inicio e Historial muestran una
+  tarjeta por día (ABIERTO/CERRADO, cuánto falta).
+- **Cerrar:** el encargado (o Noel) cierra el stock del día desde la carga o
+  la tarjeta, con "¿Estás seguro…?". Cerrado = nadie lo modifica; la
+  planilla rechaza cargas en un día cerrado. Solo **Noel** reabre y borra un
+  día entero. Hoja **Cierres** en la planilla. Ignacio no es usuario de la app.
 - **Noel** arma los productos en Config: nombre, categoría (Barra/Cocina; las primeras pruebas se guardaron como
   Bebidas/Comida y se leen con el nombre nuevo, sin renombrar la planilla),
   grupo (Top 10, máximo 10 por categoría, o Resto) y unidad. En Config cada grupo (Barra · Top 10,
-  etc.) es una lista desplegable. Ve el historial, es el único que borra o
-  edita una carga (al editar, la carga sigue a nombre de quien la hizo y la
-  nota dice "editado por Noel"), (también lo exige el Apps Script con
-  `QUIEN_PUEDE_BORRAR`) y tiene el botón "Abrir la planilla" en Config
-  (no en Inicio). Josefina
+  etc.) es una lista desplegable. Tiene el botón "Abrir la planilla" en
+  Config (no en Inicio). Reabrir y borrar día también los exige el Apps
+  Script (`QUIEN_PUEDE_BORRAR`); cerrar, `PUEDEN_CERRAR`. Josefina
   quedó con los mismos permisos que Noel salvo borrar.
 - Noel mira el stock en la planilla: hoja **Conteos** (un renglón por
   producto contado) y hoja **Resumen**, que el Apps Script rearma después de
   cada cambio (productos en filas, fechas en columnas, la más nueva primero;
   al lado de cada fecha una columna "Dif." contra el conteo anterior de ese
   producto: bajas en rojo, y con fondo rojo si bajó más de `BAJA_FUERTE`
-  = 30 %).
+  = 30 %; la fecha dice "(cerrado)" si el día está cerrado).
   Hoja **Catálogo**: los productos. Hoja **Config**: las unidades.
 - **Una planilla (y un Apps Script) por bar**, todas de Noel. El link de
   instalación lleva uno o varios pares `vincular=<exec>&bar=<Nombre>` más
@@ -58,8 +62,7 @@ quiere armar.
   `stockbares_pendientes_v2` (la v1 quedó sin usar).
 - La planilla de prueba es de la cuenta de Ignacio; la definitiva la tiene
   que crear Noel con su cuenta (el Apps Script funciona a nombre de quien lo
-  implementa). Botellas abiertas: los productos en botellas tienen
-  botones +¼ +½ +¾ al lado del casillero (también se aceptan decimales).
+  implementa).
 
 ## Cómo trabajar con Ignacio
 

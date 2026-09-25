@@ -93,6 +93,16 @@
   .tag { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 20px; display: inline-block; }
   .tag.bebidas { background: var(--blue-bg); color: var(--blue); }
   .tag.comida { background: var(--green-bg); color: var(--green); }
+  .estado { font-size: 11px; font-weight: 800; letter-spacing: 0.5px; padding: 4px 9px; border-radius: 20px; white-space: nowrap; }
+  .estado.abierto { background: var(--gold-bg); color: var(--gold); }
+  .estado.cerrado { background: var(--green-bg); color: var(--green); }
+  .day-sub { font-size: 12px; font-weight: 700; color: var(--ink-soft); margin: 10px 0 2px; }
+  .day-sub:first-child { margin-top: 0; }
+  .g-line.falta span { color: var(--ink-soft); font-weight: 400; font-style: italic; }
+  .btn-go { margin-top: 10px; width: 100%; padding: 12px 0; border-radius: 10px; border: none; background: var(--wine); color: #fff; font-weight: 700; font-size: 15px; }
+  .btn-close { margin-top: 10px; width: 100%; padding: 12px 0; border-radius: 10px; border: none; background: var(--green); color: #fff; font-weight: 700; font-size: 15px; }
+  .cerrar-box .btn-close { margin: 0 0 14px; }
+  .cerrar-box .help-text { margin: -6px 0 14px; }
   .btn-edit { margin-top: 10px; width: 100%; padding: 10px 0; border-radius: 10px; border: 1px solid var(--wine); background: transparent; color: var(--wine-dark); font-weight: 700; font-size: 14px; }
   .btn-del { margin-top: 10px; width: 100%; padding: 10px 0; border-radius: 10px; border: 1px solid var(--rust); background: transparent; color: var(--rust); font-weight: 700; font-size: 14px; }
   .btn-more { margin: 12px 20px 0; width: calc(100% - 40px); padding: 12px 0; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); color: var(--ink-soft); font-weight: 600; font-size: 14px; }
@@ -227,16 +237,13 @@
   <div id="tab-inicio" class="tab-panel active">
     <div class="sync-banner" id="syncBanner"></div>
     <button class="big-btn" id="openCarga" style="display:none">Cargar stock<small>Barra o cocina, a una fecha</small></button>
-    <div class="info-card" id="lastCard" style="display:none"></div>
-    <div class="section-title" id="recentTitle">Últimas cargas</div>
+    <div class="section-title" id="recentTitle">Stock por día</div>
     <div class="groups" id="recentList"></div>
   </div>
 
   <!-- HISTORIAL -->
   <div id="tab-historial" class="tab-panel">
-    <div class="filters">
-      <select id="filterCat"></select>
-    </div>
+    <div class="section-title" style="padding-top:4px;">Todos los días</div>
     <div class="groups" id="historyList"></div>
     <button class="btn-more" id="historyMore" style="display:none">Ver más</button>
   </div>
@@ -315,6 +322,7 @@
 
       <div id="wStep2" style="display:none">
         <div class="choices" id="wCats"></div>
+        <div class="cerrar-box" id="wCerrar2"></div>
         <div class="modal-actions">
           <button class="btn-cancel" data-back="1">‹ Volver</button>
         </div>
@@ -322,6 +330,7 @@
 
       <div id="wStep3" style="display:none">
         <div class="choices" id="wGrupos"></div>
+        <div class="cerrar-box" id="wCerrar3"></div>
         <div class="modal-actions">
           <button class="btn-cancel" data-back="2">‹ Volver</button>
           <button class="btn-cancel" data-close>Terminar</button>
@@ -329,10 +338,6 @@
       </div>
 
       <div id="wStep4" style="display:none">
-        <div class="field" id="wFechaEditWrap" style="display:none;">
-          <label>Fecha del stock</label>
-          <input type="date" id="wFechaEdit">
-        </div>
         <div id="wDone"></div>
         <div class="help-text">Contá lo que hay y anotalo. Si no hay ninguno, poné 0. Para una botella abierta, poné las enteras y tocá +¼, +½ o +¾.</div>
         <input type="search" id="wBuscar" placeholder="Buscar…" style="display:none; width:100%; padding:12px 13px; border-radius:10px; border:1px solid var(--line); font-size:16px; background:var(--bg); margin-bottom:8px; font-family:inherit;">
@@ -397,15 +402,18 @@
 // ============================================================
 const APP_NAME = "Stock";
 // Quiénes usan la app y qué puede hacer cada uno.
-//   cargar: carga el stock.
-//   ver_todo: ve las cargas de todos y el botón para abrir la planilla.
+//   cargar: carga y corrige el stock de un día mientras está abierto.
+//   cerrar: cierra el stock de un día (después nadie lo puede cambiar).
+//   reabrir: vuelve a abrir un stock cerrado.
+//   ver_todo: ve el botón para abrir la planilla y la copia de seguridad.
 //   config: arma la lista de productos y las unidades.
-//   borrar: puede borrar y editar cargas (tiene que coincidir con
-//           QUIEN_PUEDE_BORRAR del Apps Script).
+//   borrar: borra un día entero.
+// reabrir y borrar tienen que coincidir con QUIEN_PUEDE_BORRAR del Apps
+// Script, y cerrar con PUEDEN_CERRAR.
 const PERMISOS = {
-  "Noel": ["cargar", "ver_todo", "config", "borrar"],
+  "Noel": ["cargar", "cerrar", "reabrir", "ver_todo", "config", "borrar"],
   "Josefina": ["ver_todo", "config"],
-  "Encargado": ["cargar"]
+  "Encargado": ["cargar", "cerrar"]
 };
 const PEOPLE = Object.keys(PERMISOS);
 // Prefijo de todo lo que se guarda en el celular. Todas las apps de
@@ -491,12 +499,14 @@ let conteos = [];
 let productos = [];
 let UNITS = [...DEFAULT_UNITS];
 let planillaUrl = "";
+// Días cuyo stock ya se cerró: [{ fecha, persona, cuando }].
+let cierres = [];
 
 function cacheKey(barName) { return KEY_PREFIX + "bar_" + slug(barName) + "_cache_v2"; }
 function syncKey(barName) { return KEY_PREFIX + "bar_" + slug(barName) + "_ultima_sync"; }
 
 function loadLocalCache() {
-  conteos = []; productos = []; UNITS = [...DEFAULT_UNITS]; planillaUrl = "";
+  conteos = []; productos = []; UNITS = [...DEFAULT_UNITS]; planillaUrl = ""; cierres = [];
   if (!curBarName) return;
   const c = lsJson(cacheKey(curBarName), null);
   if (!c) return;
@@ -504,11 +514,12 @@ function loadLocalCache() {
   if (Array.isArray(c.productos)) productos = normData(c.productos);
   if (Array.isArray(c.unidades) && c.unidades.length) UNITS = c.unidades;
   if (typeof c.planilla === "string") planillaUrl = c.planilla;
+  if (Array.isArray(c.cierres)) cierres = c.cierres;
 }
 
 function saveLocalCache() {
   if (!curBarName) return;
-  lsSet(cacheKey(curBarName), JSON.stringify({ conteos, productos, unidades: UNITS, planilla: planillaUrl }));
+  lsSet(cacheKey(curBarName), JSON.stringify({ conteos, productos, unidades: UNITS, planilla: planillaUrl, cierres }));
 }
 
 // ============================================================
@@ -544,6 +555,9 @@ function isApplied(op, data) {
   switch (op.action) {
     case "add": return p.conteos.every(c => data.conteos.some(x => sameId(x.id, c.id)));
     case "delete_carga": return !data.conteos.some(x => sameId(x.carga, p.carga));
+    case "cerrar": return (data.cierres || []).some(c => c.fecha === p.fecha);
+    case "reabrir": return !(data.cierres || []).some(c => c.fecha === p.fecha);
+    case "delete_dia": return !data.conteos.some(x => x.fecha === p.fecha) && !(data.cierres || []).some(c => c.fecha === p.fecha);
     case "replace_carga": {
       const ids = data.conteos.filter(x => sameId(x.carga, p.carga)).map(x => String(x.id)).sort().join("|");
       return ids === p.conteos.map(c => String(c.id)).sort().join("|");
@@ -565,6 +579,16 @@ function applyOp(op) {
       break;
     case "delete_carga":
       conteos = conteos.filter(x => !sameId(x.carga, p.carga));
+      break;
+    case "cerrar":
+      if (!cierres.some(c => c.fecha === p.fecha)) cierres = cierres.concat([{ fecha: p.fecha, persona: p.quien, cuando: p.cuando || "" }]);
+      break;
+    case "reabrir":
+      cierres = cierres.filter(c => c.fecha !== p.fecha);
+      break;
+    case "delete_dia":
+      conteos = conteos.filter(x => x.fecha !== p.fecha);
+      cierres = cierres.filter(c => c.fecha !== p.fecha);
       break;
     case "replace_carga":
       conteos = conteos.filter(x => !sameId(x.carga, p.carga)).concat(p.conteos);
@@ -613,7 +637,7 @@ async function flushOutbox() {
       outbox = outbox.filter(o => o.opId !== op.opId);
       saveOutbox();
       if (op.bar === curBarName) sentCurrent = true;
-      if (drop) showToast("La planilla no aceptó un cambio");
+      if (drop) showToast(op.action === "add" ? "No se guardó: el stock de ese día ya estaba cerrado" : "La planilla no aceptó un cambio");
     } else {
       // Se frena este bar para no mandar sus cambios fuera de orden.
       blocked.add(op.bar);
@@ -656,6 +680,7 @@ async function fetchAllFromSheet() {
     productos = normData(data.productos);
     if (Array.isArray(data.unidades) && data.unidades.length) UNITS = data.unidades;
     if (typeof data.planilla === "string") planillaUrl = data.planilla;
+    cierres = Array.isArray(data.cierres) ? data.cierres : [];
     applyOutboxLocally();
     saveLocalCache();
     syncProblem = "";
@@ -722,62 +747,99 @@ function prodByName(n) { return productos.find(p => p.nombre === n); }
 function productosDe(cat, grupo) {
   return productos.filter(p => p.categoria === cat && (!grupo || p.grupo === grupo)).sort((a, b) => a.nombre.localeCompare(b.nombre, "es", { numeric: true }));
 }
-// La última carga de esa parte en esa fecha (para mostrar el ✓).
-function cargaHecha(fecha, cat, grupo) {
-  const l = conteos.filter(c => c.fecha === fecha && c.categoria === cat && c.grupo === grupo).sort((a, b) => String(a.cargado).localeCompare(String(b.cargado)));
-  return l.length ? l[l.length - 1] : null;
+// Un stock por día: lo último cargado de cada producto en esa fecha.
+function byCargado(a, b) { return String(a.cargado).localeCompare(String(b.cargado)) || String(a.id).localeCompare(String(b.id)); }
+function stockDelDia(fecha) {
+  const m = {};
+  conteos.filter(c => c.fecha === fecha).sort(byCargado).forEach(c => { m[c.producto] = c; });
+  return m;
+}
+function cierreDe(fecha) { return cierres.find(c => c.fecha === fecha) || null; }
+function isCerrado(fecha) { return !!cierreDe(fecha); }
+function fechasConStock() {
+  return Array.from(new Set(conteos.map(c => c.fecha).concat(cierres.map(c => c.fecha)))).sort().reverse();
+}
+// Cuántos productos de esa parte ya tienen número ese día.
+function avance(fecha, cat, grupo) {
+  const s = stockDelDia(fecha);
+  const l = productosDe(cat, grupo);
+  return { hechos: l.filter(p => s[p.nombre]).length, total: l.length };
+}
+function faltanDelDia(fecha) {
+  const s = stockDelDia(fecha);
+  return productos.filter(p => !s[p.nombre]).map(p => p.nombre);
 }
 
 // ============================================================
 // RENDER
 // ============================================================
-function cargasOf(list) {
-  const map = {};
-  list.forEach(c => {
-    const k = c.carga || c.id;
-    (map[k] || (map[k] = [])).push(c);
-  });
-  return Object.keys(map).map(k => {
-    const items = map[k];
-    const f = items[0];
-    return { id: k, items, fecha: f.fecha, categoria: f.categoria, grupo: f.grupo, persona: f.persona, cargado: f.cargado, nota: f.nota };
-  }).sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)) || String(b.cargado).localeCompare(String(a.cargado)));
-}
-
-function visibles() { return can("ver_todo") ? conteos : conteos.filter(c => c.persona === phoneOwner); }
-
-function cargaHtml(g) {
-  const lines = g.items.slice().sort((a, b) => a.producto.localeCompare(b.producto, "es", { numeric: true })).map(c =>
-    '<div class="g-line"><span>' + esc(c.producto) + '</span><span class="q">' + fmtN(c.cantidad) + " " + esc(unitLabel(c.unidad)) + '</span></div>').join("");
-  const hora = g.cargado && g.cargado.length >= 16 ? " · cargado " + dayLabel(g.cargado.slice(0, 10)) + " " + g.cargado.slice(11, 16) : "";
-  const del = can("borrar") ? '<button class="btn-edit" data-edit="' + esc(g.id) + '">Editar esta carga</button>' +
-    '<button class="btn-del" data-del="' + esc(g.id) + '">Borrar esta carga</button>' : "";
-  const n = g.items.length;
+function diaHtml(fecha) {
+  const s = stockDelDia(fecha);
+  const cierre = cierreDe(fecha);
+  const abierto = !cierre;
+  const resumen = CATEGORIAS.map(cat => {
+    const l = productosDe(cat);
+    return l.length ? cat + ": " + l.filter(p => s[p.nombre]).length + " de " + l.length : "";
+  }).filter(Boolean).join(" · ");
+  let body = "";
+  CATEGORIAS.forEach(cat => GRUPOS.forEach(g => {
+    const l = productosDe(cat, g);
+    if (!l.length) return;
+    body += '<div class="day-sub">' + esc(cat) + ' · ' + esc(g) + '</div>';
+    body += l.map(p => s[p.nombre]
+      ? '<div class="g-line"><span>' + esc(p.nombre) + '</span><span class="q">' + fmtN(s[p.nombre].cantidad) + " " + esc(unitLabel(p.unidad)) + '</span></div>'
+      : '<div class="g-line falta"><span>' + esc(p.nombre) + '</span><span>falta</span></div>').join("");
+  }));
+  // Lo cargado de productos que ya no están en la lista, igual se muestra.
+  const otros = Object.keys(s).filter(n => !prodByName(n));
+  if (otros.length) {
+    body += '<div class="day-sub">Otros</div>' + otros.map(n => '<div class="g-line"><span>' + esc(n) + '</span><span class="q">' + fmtN(s[n].cantidad) + " " + esc(unitLabel(s[n].unidad)) + '</span></div>').join("");
+  }
+  const ult = Object.values(s).sort(byCargado).pop();
+  const extras = [];
+  if (ult) extras.push("Última carga: " + esc(ult.persona) + ", " + esc(dayLabel(String(ult.cargado).slice(0, 10))) + " " + esc(String(ult.cargado).slice(11, 16)));
+  if (cierre) extras.push("Cerrado por " + esc(cierre.persona) + (cierre.cuando ? ", " + esc(dayLabel(String(cierre.cuando).slice(0, 10))) + " " + esc(String(cierre.cuando).slice(11, 16)) : ""));
+  let btns = "";
+  if (abierto && can("cargar")) btns += '<button class="btn-go" data-seguir="' + esc(fecha) + '">Seguir cargando / corregir</button>';
+  if (abierto && can("cerrar")) btns += '<button class="btn-close" data-cerrar="' + esc(fecha) + '">Cerrar stock</button>';
+  if (!abierto && can("reabrir")) btns += '<button class="btn-edit" data-reabrir="' + esc(fecha) + '">Reabrir para modificar</button>';
+  if (can("borrar")) btns += '<button class="btn-del" data-deldia="' + esc(fecha) + '">Borrar este día</button>';
   return '<details class="group"><summary>' +
-      '<div class="g-left"><div class="g-title"><span class="tag ' + catCls(g.categoria) + '">' + esc(g.categoria) + ' · ' + esc(g.grupo) + '</span> ' + esc(dayLabel(g.fecha)) + '</div>' +
-      '<div class="g-meta">' + esc(g.persona) + esc(hora) + '</div></div>' +
-      '<div class="g-count">' + n + (n === 1 ? " producto" : " productos") + ' ▾</div>' +
-    '</summary><div class="g-body">' + lines + (g.nota ? '<div class="g-extra">Nota: ' + esc(g.nota) + '</div>' : "") + del + '</div></details>';
+      '<div class="g-left"><div class="g-title">Stock del ' + esc(dayLabel(fecha)) + '</div><div class="g-meta">' + esc(resumen) + '</div></div>' +
+      '<span class="estado ' + (abierto ? "abierto" : "cerrado") + '">' + (abierto ? "ABIERTO" : "CERRADO") + '</span>' +
+    '</summary><div class="g-body">' + body + (extras.length ? '<div class="g-extra">' + extras.join("<br>") + '</div>' : "") + btns + '</div></details>';
 }
 
-function renderCargas(containerId, list, emptyText) {
+function renderDias(containerId, fechas, emptyText) {
   const c = document.getElementById(containerId);
-  if (!list.length) { c.innerHTML = '<div class="empty-state">' + emptyText + '</div>'; return; }
-  c.innerHTML = list.map(cargaHtml).join("");
-  c.querySelectorAll("[data-edit]").forEach(btn => btn.addEventListener("click", () => {
-    const id = btn.getAttribute("data-edit");
-    const g = cargasOf(conteos.filter(x => sameId(x.carga || x.id, id)))[0];
-    if (g) openEdicion(g);
+  if (!fechas.length) { c.innerHTML = '<div class="empty-state">' + emptyText + '</div>'; return; }
+  c.innerHTML = fechas.map(diaHtml).join("");
+  c.querySelectorAll("[data-seguir]").forEach(b => b.addEventListener("click", () => openCarga(b.getAttribute("data-seguir"))));
+  c.querySelectorAll("[data-cerrar]").forEach(b => b.addEventListener("click", () => cerrarDia(b.getAttribute("data-cerrar"))));
+  c.querySelectorAll("[data-reabrir]").forEach(b => b.addEventListener("click", () => {
+    const f = b.getAttribute("data-reabrir");
+    if (!confirm("¿Reabrir el stock del " + dayLabelLong(f) + "?\n\nSe va a poder modificar de nuevo, también desde el celular del encargado, hasta que se vuelva a cerrar.")) return;
+    queueChange("reabrir", { fecha: f, quien: phoneOwner });
+    showToast("Stock reabierto");
   }));
-  c.querySelectorAll("[data-del]").forEach(btn => btn.addEventListener("click", () => {
-    const id = btn.getAttribute("data-del");
-    const g = cargasOf(conteos.filter(x => sameId(x.carga || x.id, id)))[0];
-    if (!g) return;
-    const resumen = g.items.slice(0, 8).map(x => "• " + x.producto + ": " + fmtN(x.cantidad)).join("\n") + (g.items.length > 8 ? "\n…y " + (g.items.length - 8) + " más" : "");
-    if (!confirm("¿Estás seguro de que querés borrar esta carga?\n\n" + g.categoria + " · " + g.grupo + " del " + dayLabel(g.fecha) + " (" + g.persona + ")\n" + resumen + "\n\nSe borra también de la planilla y de los otros celulares.")) return;
-    queueChange("delete_carga", { carga: g.id, quien: phoneOwner });
-    showToast("Carga borrada");
+  c.querySelectorAll("[data-deldia]").forEach(b => b.addEventListener("click", () => {
+    const f = b.getAttribute("data-deldia");
+    const n = Object.keys(stockDelDia(f)).length;
+    if (!confirm("¿Estás seguro de que querés borrar el stock del " + dayLabelLong(f) + "?\n\nSe " + (n === 1 ? "borra el producto cargado" : "borran los " + n + " productos cargados") + " ese día, de la planilla y de todos los celulares. No se puede deshacer.")) return;
+    queueChange("delete_dia", { fecha: f, quien: phoneOwner });
+    showToast("Día borrado");
   }));
+}
+
+// Cierra el stock de un día, después de preguntar.
+function cerrarDia(fecha) {
+  const faltan = faltanDelDia(fecha);
+  if (!confirm("¿Estás seguro de que querés cerrar el stock del " + dayLabelLong(fecha) + "?\n\n" +
+    (faltan.length ? "Todavía " + (faltan.length === 1 ? "falta cargar 1 producto" : "faltan cargar " + faltan.length + " productos") + ".\n\n" : "") +
+    "Una vez cerrado ya no se puede modificar. Solo Noel lo puede reabrir.")) return false;
+  queueChange("cerrar", { fecha: fecha, quien: phoneOwner, cuando: nowStamp() });
+  showToast("Stock del " + dayLabel(fecha) + " cerrado ✓");
+  return true;
 }
 
 function renderHeader() {
@@ -801,31 +863,14 @@ function renderHeader() {
 
 function renderInicio() {
   document.getElementById("openCarga").style.display = can("cargar") ? "block" : "none";
-  const card = document.getElementById("lastCard");
-  const fechas = Array.from(new Set(conteos.map(c => c.fecha))).sort();
-  if (can("ver_todo") && fechas.length) {
-    card.style.display = "block";
-    card.innerHTML = '<div class="l">Último stock cargado</div><div class="v">' + esc(dayLabelLong(fechas[fechas.length - 1])) + '</div>';
-  } else card.style.display = "none";
-  document.getElementById("recentTitle").textContent = can("ver_todo") ? "Últimas cargas" : "Tus últimas cargas";
-  renderCargas("recentList", cargasOf(visibles()).slice(0, 5), can("cargar") ? "Todavía no cargaste stock." : "Todavía no hay stock cargado.");
+  renderDias("recentList", fechasConStock().slice(0, 4), "Todavía no hay stock cargado.");
 }
 
-let historyLimit = 30;
+let historyLimit = 20;
 function renderHistorial() {
-  const sel = document.getElementById("filterCat");
-  const v = sel.value;
-  const opts = [["", "Barra y cocina"]];
-  CATEGORIAS.forEach(c => { opts.push([c + "|", "Solo " + c.toLowerCase()]); GRUPOS.forEach(g => opts.push([c + "|" + g, c + " · " + g])); });
-  sel.innerHTML = opts.map(o => '<option value="' + esc(o[0]) + '"' + (o[0] === v ? " selected" : "") + '>' + esc(o[1]) + '</option>').join("");
-  let list = visibles();
-  if (v) {
-    const [c, g] = v.split("|");
-    list = list.filter(x => x.categoria === c && (!g || x.grupo === g));
-  }
-  const cargas = cargasOf(list);
-  renderCargas("historyList", cargas.slice(0, historyLimit), "No hay cargas para mostrar.");
-  document.getElementById("historyMore").style.display = cargas.length > historyLimit ? "block" : "none";
+  const fechas = fechasConStock();
+  renderDias("historyList", fechas.slice(0, historyLimit), "Todavía no hay stock cargado.");
+  document.getElementById("historyMore").style.display = fechas.length > historyLimit ? "block" : "none";
 }
 
 // Qué listas de productos están abiertas en Config (para no cerrarlas al actualizar).
@@ -944,8 +989,7 @@ document.getElementById("barSelect").addEventListener("change", (e) => {
   syncNow();
 });
 
-document.getElementById("filterCat").addEventListener("change", () => { historyLimit = 30; renderHistorial(); });
-document.getElementById("historyMore").addEventListener("click", () => { historyLimit += 30; renderHistorial(); });
+document.getElementById("historyMore").addEventListener("click", () => { historyLimit += 20; renderHistorial(); });
 
 document.querySelectorAll(".accordion-header").forEach(header => {
   header.addEventListener("click", () => {
@@ -962,16 +1006,18 @@ function closeOverlay(id) { document.getElementById(id).classList.remove("open")
 // ============================================================
 // CARGAR STOCK: fecha → categoría → grupo → cantidades
 // ============================================================
+// Hay un solo stock por día. Elegir una fecha que ya tiene stock abre ese
+// mismo stock, con lo cargado, para completarlo o corregirlo. Cada cambio
+// se agrega a la planilla (queda el historial) y vale lo último.
 let wStep = 1, wFecha = "", wCat = "", wGrupo = "";
-// Si se está corrigiendo una carga ya guardada, es esa carga; si no, null.
-let editando = null;
 
-function openCarga() {
-  editando = null;
-  wStep = 1; wFecha = todayStr(); wCat = ""; wGrupo = "";
-  document.getElementById("wFecha").value = wFecha;
+function openCarga(fecha) {
+  wCat = ""; wGrupo = "";
   document.getElementById("cargaOverlay").classList.add("open");
-  renderWizard();
+  if (fecha) { wFecha = fecha; goStep(2); return; }
+  wFecha = todayStr();
+  document.getElementById("wFecha").value = wFecha;
+  goStep(1);
 }
 
 function goStep(n) {
@@ -980,47 +1026,63 @@ function goStep(n) {
   document.querySelector("#cargaOverlay .modal-sheet").scrollTop = 0;
 }
 
+function hechoHtml(av) {
+  if (!av.total) return "";
+  if (av.hechos === av.total) return '<span class="done">✓ Completo</span>';
+  return av.hechos ? '<span class="done" style="background:var(--gold-bg);color:var(--gold);">' + av.hechos + ' de ' + av.total + '</span>' : "";
+}
+
+function renderCerrar(boxId) {
+  const box = document.getElementById(boxId);
+  const hay = Object.keys(stockDelDia(wFecha)).length > 0;
+  if (!can("cerrar") || isCerrado(wFecha) || !hay) { box.innerHTML = ""; return; }
+  const faltan = faltanDelDia(wFecha).length;
+  box.innerHTML = '<button class="btn-close" id="' + boxId + 'Btn">Cerrar el stock del ' + esc(dayLabel(wFecha)) + '</button>' +
+    '<div class="help-text">' + (faltan ? (faltan === 1 ? "Falta 1 producto. " : "Faltan " + faltan + " productos. ") : "Está todo cargado. ") + 'Una vez cerrado no se puede modificar.</div>';
+  document.getElementById(boxId + "Btn").addEventListener("click", () => {
+    if (cerrarDia(wFecha)) closeOverlay("cargaOverlay");
+  });
+}
+
 function renderWizard() {
   [1, 2, 3, 4].forEach(n => { document.getElementById("wStep" + n).style.display = n === wStep ? "block" : "none"; });
   const crumb = [];
-  if (wStep > 1) crumb.push(dayLabelLong(wFecha));
+  if (wStep > 1) crumb.push("Stock del " + dayLabelLong(wFecha));
   if (wStep > 2) crumb.push(wCat);
   if (wStep > 3) crumb.push(wGrupo);
   document.getElementById("wCrumb").textContent = crumb.join(" · ");
-  document.getElementById("wTitle").textContent = editando ? "Editar carga" :
+  document.getElementById("wTitle").textContent =
     wStep === 1 ? "Cargar stock" : wStep === 2 ? "¿Qué vas a contar?" : wStep === 3 ? "¿Qué parte?" : "Cantidades";
-  document.getElementById("wFechaEditWrap").style.display = editando && wStep === 4 ? "block" : "none";
-  document.querySelector('#wStep4 [data-back="3"]').textContent = editando ? "Cancelar" : "‹ Volver";
 
   if (wStep === 2) {
     const c = document.getElementById("wCats");
     c.innerHTML = CATEGORIAS.map(cat => {
-      const hechos = GRUPOS.filter(g => cargaHecha(wFecha, cat, g)).length;
-      const n = productosDe(cat).length;
+      const av = GRUPOS.map(g => avance(wFecha, cat, g)).reduce((x, y) => ({ hechos: x.hechos + y.hechos, total: x.total + y.total }), { hechos: 0, total: 0 });
       return '<button class="choice ' + catCls(cat) + '" data-cat="' + esc(cat) + '"><span>' + esc(cat) +
-        '<small>' + n + (n === 1 ? " producto" : " productos") + '</small></span>' +
-        (hechos === GRUPOS.length ? '<span class="done">✓ Todo cargado</span>' : hechos ? '<span class="done">✓ ' + hechos + ' de ' + GRUPOS.length + '</span>' : "") + '</button>';
+        '<small>' + av.total + (av.total === 1 ? " producto" : " productos") + '</small></span>' + hechoHtml(av) + '</button>';
     }).join("");
     c.querySelectorAll("[data-cat]").forEach(b => b.addEventListener("click", () => { wCat = b.getAttribute("data-cat"); goStep(3); }));
+    renderCerrar("wCerrar2");
   }
   if (wStep === 3) {
     const c = document.getElementById("wGrupos");
     c.innerHTML = GRUPOS.map(g => {
-      const n = productosDe(wCat, g).length;
-      const h = cargaHecha(wFecha, wCat, g);
-      return '<button class="choice ' + catCls(wCat) + '" data-grupo="' + esc(g) + '"' + (n ? "" : " disabled") + '><span>' + esc(g) +
-        '<small>' + (n ? n + (n === 1 ? " producto" : " productos") : "No hay productos en este grupo") + '</small></span>' +
-        (h ? '<span class="done">✓ Cargado ' + esc(String(h.cargado).slice(11, 16)) + '</span>' : "") + '</button>';
+      const av = avance(wFecha, wCat, g);
+      return '<button class="choice ' + catCls(wCat) + '" data-grupo="' + esc(g) + '"' + (av.total ? "" : " disabled") + '><span>' + esc(g) +
+        '<small>' + (av.total ? av.total + (av.total === 1 ? " producto" : " productos") : "No hay productos en este grupo") + '</small></span>' + hechoHtml(av) + '</button>';
     }).join("");
     c.querySelectorAll("[data-grupo]").forEach(b => b.addEventListener("click", () => { wGrupo = b.getAttribute("data-grupo"); openLista(); }));
+    renderCerrar("wCerrar3");
   }
 }
 
 function openLista() {
   const lista = productosDe(wCat, wGrupo);
-  const h = editando ? null : cargaHecha(wFecha, wCat, wGrupo);
-  document.getElementById("wDone").innerHTML = h
-    ? '<div class="note-done">Esta parte ya se cargó para esta fecha (' + esc(h.persona) + ', ' + esc(String(h.cargado).slice(11, 16)) + '). Si la cargás de nuevo, vale lo último.</div>' : "";
+  const dia = stockDelDia(wFecha);
+  const ya = lista.filter(p => dia[p.nombre]).length;
+  document.getElementById("wDone").innerHTML = ya
+    ? '<div class="note-done">' + (ya === lista.length ? "Esta parte ya está completa." : "Ya " + (ya === 1 ? "hay 1 cargado" : "hay " + ya + " cargados") + " de " + lista.length + ".") +
+      ' Podés corregir los números o completar lo que falta.</div>' : "";
   const buscar = document.getElementById("wBuscar");
   buscar.value = "";
   buscar.style.display = lista.length > 12 ? "block" : "none";
@@ -1028,6 +1090,12 @@ function openLista() {
   document.getElementById("wErr").style.display = "none";
   const box = document.getElementById("wLista");
   box.innerHTML = lista.map(p => qRowHtml(p.nombre, p.unidad)).join("");
+  lista.forEach(p => {
+    if (!dia[p.nombre]) return;
+    const inp = box.querySelector('input[data-item="' + CSS.escape(p.nombre) + '"]');
+    inp.value = String(dia[p.nombre].cantidad).replace(".", ",");
+    inp.dataset.antes = String(dia[p.nombre].cantidad);
+  });
   bindQRows();
   goStep(4);
 }
@@ -1073,28 +1141,6 @@ function bindQRows() {
   });
 }
 
-// Abre una carga ya guardada con sus cantidades, para corregirla.
-function openEdicion(g) {
-  editando = g;
-  wFecha = g.fecha; wCat = normCat(g.categoria); wGrupo = g.grupo;
-  document.getElementById("cargaOverlay").classList.add("open");
-  openLista();
-  document.getElementById("wFechaEdit").value = g.fecha;
-  // Si un producto ya no está en la lista, se muestra igual para poder corregirlo.
-  const box = document.getElementById("wLista");
-  g.items.forEach(c => {
-    if (!box.querySelector('input[data-item="' + CSS.escape(c.producto) + '"]')) {
-      box.insertAdjacentHTML("beforeend", qRowHtml(c.producto, c.unidad));
-    }
-    const inp = box.querySelector('input[data-item="' + CSS.escape(c.producto) + '"]');
-    inp.value = String(c.cantidad).replace(".", ",");
-  });
-  bindQRows();
-  box.querySelectorAll(".q-row").forEach(markFrac);
-  document.getElementById("wNota").value = (g.nota || "").replace(/ ?\(editado por [^)]*\)$/, "");
-  document.getElementById("wDone").innerHTML = '<div class="note-done">Estás corrigiendo lo que cargó ' + esc(g.persona) + '. En la planilla queda anotado que lo editaste vos.</div>';
-}
-
 document.getElementById("wBuscar").addEventListener("input", (e) => {
   const q = norm(e.target.value.trim());
   document.querySelectorAll("#wLista .q-row").forEach(r => { r.style.display = !q || r.getAttribute("data-name").includes(q) ? "flex" : "none"; });
@@ -1103,34 +1149,36 @@ document.getElementById("wBuscar").addEventListener("input", (e) => {
 document.getElementById("wNext1").addEventListener("click", () => {
   const f = document.getElementById("wFecha").value;
   if (!f) { alert("Elegí la fecha."); return; }
+  if (isCerrado(f)) {
+    alert("El stock del " + dayLabelLong(f) + " ya está cerrado y no se puede modificar." +
+      (can("reabrir") ? "\n\nSi hay que cambiar algo, reabrilo desde Inicio." : "\n\nSi hay que corregir algo, pedíselo a Noel."));
+    return;
+  }
   wFecha = f;
   goStep(2);
 });
-document.querySelectorAll("#cargaOverlay [data-back]").forEach(b => b.addEventListener("click", () => {
-  if (editando) { editando = null; closeOverlay("cargaOverlay"); return; }
-  goStep(Number(b.getAttribute("data-back")));
-}));
+document.querySelectorAll("#cargaOverlay [data-back]").forEach(b => b.addEventListener("click", () => goStep(Number(b.getAttribute("data-back")))));
 document.querySelectorAll("#cargaOverlay [data-close]").forEach(b => b.addEventListener("click", () => closeOverlay("cargaOverlay")));
 
 function wErr(msg) { const e = document.getElementById("wErr"); e.textContent = msg; e.style.display = "block"; }
 
 document.getElementById("wSave").addEventListener("click", () => {
   if (!PEOPLE.includes(phoneOwner)) { wErr("Este celular no sabe quién lo usa. Abrí de nuevo tu link de instalación."); return; }
-  const items = [], faltan = [];
-  let bad = "";
+  if (isCerrado(wFecha)) { wErr("El stock de este día ya está cerrado: no se puede modificar."); return; }
+  const items = [];
+  let bad = "", borrado = "";
   document.querySelectorAll("#wLista input[data-item]").forEach(inp => {
     const nombre = inp.getAttribute("data-item");
     const q = parseQty(inp.value);
-    if (q === null) { faltan.push(nombre); return; }
+    const antes = inp.dataset.antes;
+    if (q === null) { if (antes !== undefined) borrado = borrado || nombre; return; }
     if (isNaN(q) || q < 0) { bad = bad || nombre; return; }
+    if (antes !== undefined && Number(antes) === q) return;
     items.push({ nombre, cantidad: q });
   });
   if (bad) { wErr("Revisá la cantidad de «" + bad + "»: tiene que ser un número (ej: 3 o 2,5)."); return; }
-  if (!items.length) { wErr("Anotá la cantidad de al menos un producto. Si no hay ninguno, poné 0."); return; }
-  if (editando) { guardarEdicion(items, faltan); return; }
-  if (faltan.length && !confirm("No cargaste " + (faltan.length === 1 ? "este producto" : "estos " + faltan.length + " productos") + ":\n\n" +
-    faltan.slice(0, 12).map(n => "• " + n).join("\n") + (faltan.length > 12 ? "\n…y " + (faltan.length - 12) + " más" : "") +
-    "\n\nSi no hay ninguno, poné 0. ¿Guardar igual?")) return;
+  if (borrado) { wErr("«" + borrado + "» ya estaba cargado: no lo dejes vacío. Si no hay ninguno, poné 0."); return; }
+  if (!items.length) { showToast("No hubo cambios"); goStep(3); return; }
 
   const carga = newId();
   const cargado = nowStamp();
@@ -1148,32 +1196,6 @@ document.getElementById("wSave").addEventListener("click", () => {
   // Vuelve a elegir la parte, con la misma fecha, para seguir cargando.
   goStep(3);
 });
-
-function guardarEdicion(items, faltan) {
-  const g = editando;
-  const fecha = document.getElementById("wFechaEdit").value;
-  if (!fecha) { wErr("Elegí la fecha."); return; }
-  const sacados = g.items.filter(c => faltan.includes(c.producto)).map(c => c.producto);
-  if (sacados.length && !confirm("Dejaste vacío " + (sacados.length === 1 ? "este producto, que se va a sacar" : "estos productos, que se van a sacar") + " de la carga:\n\n" +
-    sacados.map(n => "• " + n).join("\n") + "\n\n¿Seguir?")) return;
-  const d = new Date();
-  const marca = " (editado por " + phoneOwner + " " + d.getDate() + "/" + (d.getMonth() + 1) + " " + pad2(d.getHours()) + ":" + pad2(d.getMinutes()) + ")";
-  const nota = document.getElementById("wNota").value.trim() + marca;
-  const sufijo = "-e" + Date.now().toString(36);
-  const nuevos = items.map((it, i) => {
-    const p = prodByName(it.nombre);
-    const antes = g.items.find(c => c.producto === it.nombre);
-    return {
-      id: g.id + sufijo + "-" + i, carga: g.id, fecha, categoria: wCat, grupo: wGrupo,
-      producto: it.nombre, cantidad: it.cantidad, unidad: p ? p.unidad : (antes ? antes.unidad : ""),
-      persona: g.persona, nota: nota.trim(), cargado: g.cargado
-    };
-  });
-  editando = null;
-  closeOverlay("cargaOverlay");
-  queueChange("replace_carga", { carga: g.id, conteos: nuevos, quien: phoneOwner });
-  showToast("Carga corregida ✓");
-}
 
 // ============================================================
 // PRODUCTOS
@@ -1248,7 +1270,7 @@ document.getElementById("downloadBackup").addEventListener("click", () => {
   const backup = { exportadoEl: new Date().toISOString(), bar: curBarName, conteos, productos, unidades: UNITS };
   saveFile(KEY_PREFIX.replace(/_+$/, "") + "-" + slug(curBarName) + "-backup-" + todayStr() + ".json", JSON.stringify(backup, null, 2), "application/json");
 });
-document.getElementById("openCarga").addEventListener("click", openCarga);
+document.getElementById("openCarga").addEventListener("click", () => openCarga());
 document.getElementById("prodOverlay").addEventListener("click", (e) => { if (e.target.id === "prodOverlay") closeOverlay("prodOverlay"); });
 
 // Persona fija por celular (si el link no la trajo, se pregunta una vez).
