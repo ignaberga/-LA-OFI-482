@@ -44,7 +44,10 @@ quiere armar.
   quedó con los mismos permisos que Noel salvo borrar.
 - Noel mira el stock en la planilla: hoja **Conteos** (un renglón por
   producto contado) y hoja **Resumen**, que el Apps Script rearma después de
-  cada cambio (productos en filas, fechas en columnas, la más nueva primero).
+  cada cambio (productos en filas, fechas en columnas, la más nueva primero;
+  al lado de cada fecha una columna "Dif." contra el conteo anterior de ese
+  producto: bajas en rojo, y con fondo rojo si bajó más de `BAJA_FUERTE`
+  = 30 %).
   Hoja **Catálogo**: los productos. Hoja **Config**: las unidades.
 - **Una planilla (y un Apps Script) por bar**, todas de Noel. El link de
   instalación lleva uno o varios pares `vincular=<exec>&bar=<Nombre>` más
@@ -55,8 +58,8 @@ quiere armar.
   `stockbares_pendientes_v2` (la v1 quedó sin usar).
 - La planilla de prueba es de la cuenta de Ignacio; la definitiva la tiene
   que crear Noel con su cuenta (el Apps Script funciona a nombre de quien lo
-  implementa). Pendiente con Noel: cómo contar botellas abiertas (hoy se
-  aceptan decimales, ej. 3,5).
+  implementa). Botellas abiertas: los productos en botellas tienen
+  botones +¼ +½ +¾ al lado del casillero (también se aceptan decimales).
 
 ## Cómo trabajar con Ignacio
 

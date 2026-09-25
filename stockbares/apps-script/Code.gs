@@ -55,6 +55,9 @@ const DEFAULT_CONFIG = {
 
 // Cuantas fechas (las mas nuevas) se muestran en la hoja Resumen.
 const RESUMEN_FECHAS = 20;
+// En el Resumen, una baja mayor a esta parte del conteo anterior se marca
+// con fondo rojo (0.3 = mas del 30 %).
+const BAJA_FUERTE = 0.3;
 
 function ss_() { return SpreadsheetApp.getActiveSpreadsheet(); }
 
@@ -170,9 +173,12 @@ function conteoToRow_(c) {
   ];
 }
 
-// Arma la hoja Resumen: productos en filas, fechas en columnas (la mas
-// nueva primero). Si un producto se conto dos veces el mismo dia, vale
-// el ultimo. Es solo una vista: los datos de verdad estan en Conteos.
+// Arma la hoja Resumen: productos en filas y, por cada fecha (la mas
+// nueva primero), lo contado y la diferencia contra el conteo anterior de
+// ese producto. Las bajas se pintan de rojo; las bajas fuertes (mas de
+// BAJA_FUERTE del conteo anterior) llevan ademas fondo rojo. Si un producto
+// se conto dos veces el mismo dia, vale el ultimo. Es solo una vista: los
+// datos de verdad estan en Conteos.
 function rebuildResumen_() {
   const conteos = readConteos_();
   const catalogo = readCatalogo_();
@@ -200,24 +206,64 @@ function rebuildResumen_() {
       a.nombre.localeCompare(b.nombre, "es", { numeric: true });
   });
 
-  const header = ["Categoría", "Grupo", "Producto", "Unidad"].concat(cols.map(function (f) {
+  // El conteo anterior de un producto a una fecha (aunque no sea la columna de al lado).
+  const anterior = function (nombre, i) {
+    for (let j = i + 1; j < fechas.length; j++) {
+      const k = nombre + "|" + fechas[j];
+      if (k in valor) return valor[k];
+    }
+    return null;
+  };
+
+  const FIJAS = 4;
+  const header = ["Categoría", "Grupo", "Producto", "Unidad"];
+  cols.forEach(function (f) {
     const p = f.split("-");
-    return p.length === 3 ? p[2] + "/" + p[1] + "/" + p[0] : f;
-  }));
-  const rows = [header].concat(productos.map(function (p) {
-    return [p.categoria, p.grupo, p.nombre, p.unidad].concat(cols.map(function (f) {
+    header.push(p.length === 3 ? p[2] + "/" + p[1] + "/" + p[0] : f);
+    header.push("Dif.");
+  });
+  const rows = [header];
+  const fondos = [header.map(function (h, i) { return i >= FIJAS && h === "Dif." ? "#EEEAE5" : "#FFFFFF"; })];
+  const letras = [header.map(function () { return "#000000"; })];
+  const negritas = [header.map(function () { return "bold"; })];
+  productos.forEach(function (p) {
+    const row = [p.categoria, p.grupo, p.nombre, p.unidad];
+    const fondo = ["#FFFFFF", "#FFFFFF", "#FFFFFF", "#FFFFFF"];
+    const letra = ["#000000", "#000000", "#000000", "#000000"];
+    const negrita = ["normal", "normal", "normal", "normal"];
+    cols.forEach(function (f, i) {
       const k = p.nombre + "|" + f;
-      return k in valor ? valor[k] : "";
-    }));
-  }));
+      const hay = k in valor ? valor[k] : null;
+      const antes = hay === null ? null : anterior(p.nombre, i);
+      row.push(hay === null ? "" : hay);
+      fondo.push("#FFFFFF"); letra.push("#000000"); negrita.push("normal");
+      if (hay === null || antes === null) {
+        row.push(""); fondo.push("#F7F5F2"); letra.push("#000000"); negrita.push("normal");
+        return;
+      }
+      const dif = Math.round((hay - antes) * 100) / 100;
+      const fuerte = dif < 0 && (antes > 0 ? -dif / antes > BAJA_FUERTE : true);
+      row.push(dif);
+      fondo.push(fuerte ? "#F6D5CF" : "#F7F5F2");
+      letra.push(dif < 0 ? "#A33A2A" : dif > 0 ? "#2F6B45" : "#6E6166");
+      negrita.push(fuerte ? "bold" : "normal");
+    });
+    rows.push(row); fondos.push(fondo); letras.push(letra); negritas.push(negrita);
+  });
 
   let sh = ss_().getSheetByName(SHEET_RESUMEN);
   if (!sh) sh = ss_().insertSheet(SHEET_RESUMEN);
   sh.clear();
-  sh.getRange(1, 1, rows.length, header.length).setValues(rows);
+  const rango = sh.getRange(1, 1, rows.length, header.length);
+  rango.setValues(rows);
+  rango.setBackgrounds(fondos);
+  rango.setFontColors(letras);
+  rango.setFontWeights(negritas);
+  for (let c = FIJAS + 2; c <= header.length; c += 2) {
+    if (rows.length > 1) sh.getRange(2, c, rows.length - 1, 1).setNumberFormat("+0.##;-0.##;0");
+  }
   sh.setFrozenRows(1);
   sh.setFrozenColumns(3);
-  sh.getRange(1, 1, 1, header.length).setFontWeight("bold");
 }
 
 function jsonOut_(obj) {

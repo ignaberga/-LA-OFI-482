@@ -155,6 +155,10 @@
   .q-row.filled { background: #FBF7EF; }
   .q-name { font-size: 15px; font-weight: 600; min-width: 0; }
   .q-name small { display: block; font-size: 12px; font-weight: 500; color: var(--ink-soft); }
+  .q-row { flex-wrap: wrap; }
+  .fracs { flex-basis: 100%; display: flex; justify-content: flex-end; gap: 6px; margin-top: -2px; }
+  .frac { min-width: 50px; padding: 7px 0; border-radius: 8px; border: 1px solid var(--line); background: var(--surface); font-size: 15px; font-weight: 700; color: var(--ink-soft); }
+  .frac.sel { background: var(--wine-bg); border-color: var(--wine); color: var(--wine-dark); }
   .q-row input { width: 92px; flex: none; padding: 10px; border-radius: 9px; border: 1.5px solid #CDBFB2; font-size: 17px; text-align: right; background: var(--bg); font-family: inherit; }
   .note-done { background: var(--green-bg); color: var(--green); border-radius: 10px; padding: 10px 12px; font-size: 13px; margin-bottom: 14px; line-height: 1.4; }
   .err-msg { font-size: 13px; color: var(--rust); margin: 6px 0 10px; display: none; }
@@ -330,7 +334,7 @@
           <input type="date" id="wFechaEdit">
         </div>
         <div id="wDone"></div>
-        <div class="help-text">Contá lo que hay y anotalo. Si no hay ninguno, poné 0.</div>
+        <div class="help-text">Contá lo que hay y anotalo. Si no hay ninguno, poné 0. Para una botella abierta, poné las enteras y tocá +¼, +½ o +¾.</div>
         <input type="search" id="wBuscar" placeholder="Buscar…" style="display:none; width:100%; padding:12px 13px; border-radius:10px; border:1px solid var(--line); font-size:16px; background:var(--bg); margin-bottom:8px; font-family:inherit;">
         <div class="qlist" id="wLista"></div>
         <div class="field" style="margin-top:14px;">
@@ -1023,13 +1027,50 @@ function openLista() {
   document.getElementById("wNota").value = "";
   document.getElementById("wErr").style.display = "none";
   const box = document.getElementById("wLista");
-  box.innerHTML = lista.map(p =>
-    '<div class="q-row" data-name="' + esc(norm(p.nombre)) + '"><div class="q-name">' + esc(p.nombre) + '<small>' + esc(unitLabel(p.unidad)) + '</small></div>' +
-    '<input type="text" inputmode="decimal" autocomplete="off" data-item="' + esc(p.nombre) + '" placeholder="Cant."></div>').join("");
-  box.querySelectorAll("input").forEach(inp => inp.addEventListener("input", () => {
-    inp.closest(".q-row").classList.toggle("filled", inp.value.trim() !== "");
-  }));
+  box.innerHTML = lista.map(p => qRowHtml(p.nombre, p.unidad)).join("");
+  bindQRows();
   goStep(4);
+}
+
+// Las botellas se pueden contar con fracciones: ¼, ½ o ¾ de botella abierta.
+const FRACCIONES = [[0.25, "¼"], [0.5, "½"], [0.75, "¾"]];
+function conFracciones(unidad) { return /botella/i.test(unidad || ""); }
+
+function qRowHtml(nombre, unidad) {
+  const fr = conFracciones(unidad)
+    ? '<div class="fracs">' + FRACCIONES.map(f => '<button type="button" class="frac" data-frac="' + f[0] + '">+' + f[1] + '</button>').join("") + '</div>' : "";
+  return '<div class="q-row" data-name="' + esc(norm(nombre)) + '"><div class="q-name">' + esc(nombre) + '<small>' + esc(unitLabel(unidad)) + '</small></div>' +
+    '<input type="text" inputmode="decimal" autocomplete="off" data-item="' + esc(nombre) + '" placeholder="Cant.">' + fr + '</div>';
+}
+
+// Marca la fracción que tiene el número escrito (3,5 → ½).
+function markFrac(row) {
+  const inp = row.querySelector("input");
+  const q = parseQty(inp.value);
+  const resto = q === null || isNaN(q) ? -1 : Math.round((q - Math.floor(q)) * 100) / 100;
+  row.querySelectorAll(".frac").forEach(b => b.classList.toggle("sel", Number(b.getAttribute("data-frac")) === resto));
+  row.classList.toggle("filled", inp.value.trim() !== "");
+}
+
+function bindQRows() {
+  document.querySelectorAll("#wLista .q-row").forEach(row => {
+    if (row.dataset.bound) return;
+    row.dataset.bound = "1";
+    const inp = row.querySelector("input");
+    inp.addEventListener("input", () => markFrac(row));
+    // Tocar una fracción pone esa parte al lado de las botellas enteras
+    // (3 → 3,5). Tocar la misma otra vez la saca.
+    row.querySelectorAll(".frac").forEach(b => b.addEventListener("click", () => {
+      const f = Number(b.getAttribute("data-frac"));
+      const q = parseQty(inp.value);
+      const enteras = q === null || isNaN(q) ? 0 : Math.floor(q);
+      const actual = q === null || isNaN(q) ? -1 : Math.round((q - enteras) * 100) / 100;
+      const nuevo = actual === f ? enteras : enteras + f;
+      inp.value = String(nuevo).replace(".", ",");
+      markFrac(row);
+    }));
+    markFrac(row);
+  });
 }
 
 // Abre una carga ya guardada con sus cantidades, para corregirla.
@@ -1043,13 +1084,13 @@ function openEdicion(g) {
   const box = document.getElementById("wLista");
   g.items.forEach(c => {
     if (!box.querySelector('input[data-item="' + CSS.escape(c.producto) + '"]')) {
-      box.insertAdjacentHTML("beforeend", '<div class="q-row" data-name="' + esc(norm(c.producto)) + '"><div class="q-name">' + esc(c.producto) +
-        '<small>' + esc(unitLabel(c.unidad)) + '</small></div><input type="text" inputmode="decimal" autocomplete="off" data-item="' + esc(c.producto) + '" placeholder="Cant."></div>');
+      box.insertAdjacentHTML("beforeend", qRowHtml(c.producto, c.unidad));
     }
     const inp = box.querySelector('input[data-item="' + CSS.escape(c.producto) + '"]');
     inp.value = String(c.cantidad).replace(".", ",");
-    inp.closest(".q-row").classList.add("filled");
   });
+  bindQRows();
+  box.querySelectorAll(".q-row").forEach(markFrac);
   document.getElementById("wNota").value = (g.nota || "").replace(/ ?\(editado por [^)]*\)$/, "");
   document.getElementById("wDone").innerHTML = '<div class="note-done">Estás corrigiendo lo que cargó ' + esc(g.persona) + '. En la planilla queda anotado que lo editaste vos.</div>';
 }
