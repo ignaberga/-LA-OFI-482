@@ -169,6 +169,9 @@
   .fracs { flex-basis: 100%; display: flex; justify-content: flex-end; gap: 6px; margin-top: -2px; }
   .frac { min-width: 50px; padding: 7px 0; border-radius: 8px; border: 1px solid var(--line); background: var(--surface); font-size: 15px; font-weight: 700; color: var(--ink-soft); }
   .frac.sel { background: var(--wine-bg); border-color: var(--wine); color: var(--wine-dark); }
+  .q-name .eq { display: block; font-size: 13px; font-weight: 700; color: var(--blue); margin-top: 2px; }
+  .q-name .eq:empty { display: none; }
+  .g-line .lt { font-weight: 500; color: var(--blue); }
   .q-row input { width: 92px; flex: none; padding: 10px; border-radius: 9px; border: 1.5px solid #CDBFB2; font-size: 17px; text-align: right; background: var(--bg); font-family: inherit; }
   .note-done { background: var(--green-bg); color: var(--green); border-radius: 10px; padding: 10px 12px; font-size: 13px; margin-bottom: 14px; line-height: 1.4; }
   .err-msg { font-size: 13px; color: var(--rust); margin: 6px 0 10px; display: none; }
@@ -256,9 +259,22 @@
           <span>Productos</span><span class="accordion-meta" id="countProductos">0</span>
         </button>
         <div class="accordion-body" id="bodyProductos">
-          <div class="help-text">Cada producto va en Barra o Cocina, en el Top 10 (hasta 10 por categoría) o en el Resto, y con la unidad en que se cuenta. Tocá uno para cambiarlo.</div>
+          <div class="help-text">Cada producto va en Barra o Cocina, en una familia (Vermuts, Vinos…), con su unidad y su contenido. Hasta 10 por categoría pueden ir en el Top 10. El orden es el de la hoja Catálogo de la planilla. Tocá uno para cambiarlo.</div>
           <div id="productList"></div>
           <button class="btn-main" id="newProduct">+ Nuevo producto</button>
+        </div>
+      </div>
+      <div class="accordion-item">
+        <button class="accordion-header" data-target="bodyCantidades">
+          <span>Cantidades</span><span class="accordion-meta" id="countCantidades">0</span>
+        </button>
+        <div class="accordion-body" id="bodyCantidades">
+          <div class="help-text">Lo que trae cada botella o envase (750 cc, 1 l, 5 kg…). Con esto la app calcula los litros o kilos al contar.</div>
+          <div class="cfg-list" id="cantList"></div>
+          <div class="add-row">
+            <input type="text" id="newCant" placeholder="Nueva cantidad (ej: 1,75 l)">
+            <button id="addCant">Agregar</button>
+          </div>
         </div>
       </div>
       <div class="accordion-item">
@@ -337,6 +353,13 @@
         </div>
       </div>
 
+      <div id="wStep5" style="display:none">
+        <div class="choices" id="wFams"></div>
+        <div class="modal-actions">
+          <button class="btn-cancel" data-back="3">‹ Volver</button>
+        </div>
+      </div>
+
       <div id="wStep4" style="display:none">
         <div id="wDone"></div>
         <div class="help-text">Contá lo que hay y anotalo. Si no hay ninguno, poné 0. Para una botella abierta, poné las enteras y tocá +¼, +½ o +¾.</div>
@@ -348,7 +371,7 @@
         </div>
         <div class="err-msg" id="wErr"></div>
         <div class="modal-actions">
-          <button class="btn-cancel" data-back="3">‹ Volver</button>
+          <button class="btn-cancel" id="wBack4">‹ Volver</button>
           <button class="btn-save" id="wSave">Guardar</button>
         </div>
       </div>
@@ -368,13 +391,22 @@
         <div class="toggle" id="pCat"></div>
       </div>
       <div class="field">
-        <label>Grupo</label>
+        <label>Familia</label>
+        <select id="pFamilia"></select>
+        <input type="text" id="pFamNueva" placeholder="Nombre de la familia nueva (ej: Vermuts)" style="display:none; margin-top:8px;">
+      </div>
+      <div class="field">
+        <label>¿Va en el Top 10?</label>
         <div class="toggle" id="pGrupo"></div>
         <div class="help-text" id="pGrupoHelp" style="margin:6px 0 0;"></div>
       </div>
       <div class="field">
         <label>Se cuenta en</label>
         <select id="pUnidad"></select>
+      </div>
+      <div class="field">
+        <label>Contenido de cada una</label>
+        <select id="pCont"></select>
       </div>
       <div class="err-msg" id="pErr"></div>
       <button class="btn-outline" id="pDelete" style="border-color:var(--rust); color:var(--rust); display:none;">Eliminar producto</button>
@@ -423,13 +455,18 @@ const KEY_PREFIX = "stockbares_";
 // Unidades de arranque. Tienen que coincidir con DEFAULT_CONFIG del
 // Apps Script (stockbares/apps-script/Code.gs).
 const DEFAULT_UNITS = ["Botellas", "Kilos", "Unidades"];
+const DEFAULT_CANTS = ["500 cc", "700 cc", "750 cc", "1 l", "1,5 l"];
 const CATEGORIAS = ["Barra", "Cocina"];
 // Nombres viejos de las categorías (así se guardaron las primeras pruebas).
 // No se renombran en la planilla: se leen con el nombre nuevo.
 const CAT_VIEJAS = { "Bebidas": "Barra", "Comida": "Cocina" };
 function normCat(c) { return CAT_VIEJAS[c] || c; }
 function normData(list) { return (list || []).map(x => Object.assign({}, x, { categoria: normCat(x.categoria) })); }
-const GRUPOS = ["Top 10", "Resto"];
+// Al cargar: el Top 10 (los productos marcados, recuento rápido) o el
+// Completo (todos, por familia; se hace a fin de mes). En la planilla el
+// producto dice "Top 10" o "Resto" en la columna Grupo.
+const PARTES = ["Top 10", "Completo"];
+const SIN_FAMILIA = "Sin familia";
 const TOP_MAX = 10;
 
 // ============================================================
@@ -498,6 +535,7 @@ function can(perm) { return (PERMISOS[phoneOwner] || []).includes(perm); }
 let conteos = [];
 let productos = [];
 let UNITS = [...DEFAULT_UNITS];
+let CANTS = [...DEFAULT_CANTS];
 let planillaUrl = "";
 // Días cuyo stock ya se cerró: [{ fecha, persona, cuando }].
 let cierres = [];
@@ -506,20 +544,21 @@ function cacheKey(barName) { return KEY_PREFIX + "bar_" + slug(barName) + "_cach
 function syncKey(barName) { return KEY_PREFIX + "bar_" + slug(barName) + "_ultima_sync"; }
 
 function loadLocalCache() {
-  conteos = []; productos = []; UNITS = [...DEFAULT_UNITS]; planillaUrl = ""; cierres = [];
+  conteos = []; productos = []; UNITS = [...DEFAULT_UNITS]; CANTS = [...DEFAULT_CANTS]; planillaUrl = ""; cierres = [];
   if (!curBarName) return;
   const c = lsJson(cacheKey(curBarName), null);
   if (!c) return;
   if (Array.isArray(c.conteos)) conteos = normData(c.conteos);
   if (Array.isArray(c.productos)) productos = normData(c.productos);
   if (Array.isArray(c.unidades) && c.unidades.length) UNITS = c.unidades;
+  if (Array.isArray(c.cantidades) && c.cantidades.length) CANTS = c.cantidades;
   if (typeof c.planilla === "string") planillaUrl = c.planilla;
   if (Array.isArray(c.cierres)) cierres = c.cierres;
 }
 
 function saveLocalCache() {
   if (!curBarName) return;
-  lsSet(cacheKey(curBarName), JSON.stringify({ conteos, productos, unidades: UNITS, planilla: planillaUrl, cierres }));
+  lsSet(cacheKey(curBarName), JSON.stringify({ conteos, productos, unidades: UNITS, cantidades: CANTS, planilla: planillaUrl, cierres }));
 }
 
 // ============================================================
@@ -546,8 +585,10 @@ function queueChange(action, payload) {
 }
 
 function sameProduct(a, b) {
-  return a.nombre === b.nombre && a.categoria === b.categoria && a.grupo === b.grupo && (a.unidad || "") === (b.unidad || "");
+  return a.nombre === b.nombre && a.categoria === b.categoria && a.grupo === b.grupo && (a.unidad || "") === (b.unidad || "") &&
+    (a.familia || "") === (b.familia || "") && (a.contenido || "") === (b.contenido || "");
 }
+function listaDe(data, nombre) { return nombre === "cantidades" ? (data.cantidades || []) : (data.unidades || []); }
 
 // Un pendiente ya está hecho si la planilla ya lo refleja.
 function isApplied(op, data) {
@@ -564,8 +605,8 @@ function isApplied(op, data) {
     }
     case "product_set": return data.productos.some(x => sameProduct(x, p.producto));
     case "product_remove": return !data.productos.some(x => x.nombre === p.nombre);
-    case "config_add": return (data.unidades || []).some(v => String(v) === String(p.value));
-    case "config_remove": return !(data.unidades || []).some(v => String(v) === String(p.value));
+    case "config_add": return listaDe(data, p.list).some(v => String(v) === String(p.value));
+    case "config_remove": return !listaDe(data, p.list).some(v => String(v) === String(p.value));
   }
   return false;
 }
@@ -602,10 +643,12 @@ function applyOp(op) {
       productos = productos.filter(x => x.nombre !== p.nombre);
       break;
     case "config_add":
-      if (!UNITS.includes(p.value)) UNITS = UNITS.concat([p.value]);
+      if (p.list === "cantidades") { if (!CANTS.includes(p.value)) CANTS = CANTS.concat([p.value]); }
+      else if (!UNITS.includes(p.value)) UNITS = UNITS.concat([p.value]);
       break;
     case "config_remove":
-      UNITS = UNITS.filter(v => v !== p.value);
+      if (p.list === "cantidades") CANTS = CANTS.filter(v => v !== p.value);
+      else UNITS = UNITS.filter(v => v !== p.value);
       break;
   }
 }
@@ -679,6 +722,7 @@ async function fetchAllFromSheet() {
     conteos = normData(data.conteos);
     productos = normData(data.productos);
     if (Array.isArray(data.unidades) && data.unidades.length) UNITS = data.unidades;
+    if (Array.isArray(data.cantidades) && data.cantidades.length) CANTS = data.cantidades;
     if (typeof data.planilla === "string") planillaUrl = data.planilla;
     cierres = Array.isArray(data.cierres) ? data.cierres : [];
     applyOutboxLocally();
@@ -744,8 +788,37 @@ function saveFile(filename, text, mime) {
 }
 
 function prodByName(n) { return productos.find(p => p.nombre === n); }
-function productosDe(cat, grupo) {
-  return productos.filter(p => p.categoria === cat && (!grupo || p.grupo === grupo)).sort((a, b) => a.nombre.localeCompare(b.nombre, "es", { numeric: true }));
+function esTop(p) { return p.grupo === "Top 10"; }
+function famOf(p) { return String(p.familia || "").trim() || SIN_FAMILIA; }
+// Productos de una categoría, en el orden de la hoja Catálogo. parte "Top 10"
+// deja solo los del Top 10; familia, solo los de esa familia.
+function productosDe(cat, parte, familia) {
+  return productos.filter(p => p.categoria === cat && (parte !== "Top 10" || esTop(p)) && (!familia || famOf(p) === familia));
+}
+// Las familias de una categoría en el orden de la hoja ("Sin familia" al final).
+function familiasDe(cat) {
+  const l = [];
+  productosDe(cat).forEach(p => { const f = famOf(p); if (!l.includes(f)) l.push(f); });
+  return l.filter(f => f !== SIN_FAMILIA).concat(l.includes(SIN_FAMILIA) ? [SIN_FAMILIA] : []);
+}
+// "750 cc", "1 l", "1,5 litros", "5 kg", "500 g" o solo "750" (= cc).
+function medidaDe(cont) {
+  const m = String(cont || "").trim().toLowerCase().replace(",", ".").match(/^(\d+(?:\.\d+)?)\s*([a-z]*)/);
+  if (!m) return null;
+  const n = Number(m[1]), u = m[2];
+  if (!(n > 0)) return null;
+  if (["cc", "ml", "cm"].includes(u)) return { v: n / 1000, u: "l" };
+  if (["l", "lt", "lts", "litro", "litros"].includes(u)) return { v: n, u: "l" };
+  if (["g", "gr", "grs", "gramo", "gramos"].includes(u)) return { v: n / 1000, u: "kg" };
+  if (["kg", "kgs", "kilo", "kilos"].includes(u)) return { v: n, u: "kg" };
+  if (!u) return n >= 50 ? { v: n / 1000, u: "l" } : { v: n, u: "l" };
+  return null;
+}
+// Cuántos litros (o kilos) son esa cantidad de envases: "2,63 l".
+function equivalente(p, cantidad) {
+  if (!p || cantidad === null || isNaN(cantidad) || /kilo|litro|gramo/i.test(p.unidad || "")) return "";
+  const m = medidaDe(p.contenido);
+  return m ? fmtN(cantidad * m.v) + " " + m.u : "";
 }
 // Un stock por día: lo último cargado de cada producto en esa fecha.
 function byCargado(a, b) { return String(a.cargado).localeCompare(String(b.cargado)) || String(a.id).localeCompare(String(b.id)); }
@@ -759,10 +832,10 @@ function isCerrado(fecha) { return !!cierreDe(fecha); }
 function fechasConStock() {
   return Array.from(new Set(conteos.map(c => c.fecha).concat(cierres.map(c => c.fecha)))).sort().reverse();
 }
-// Cuántos productos de esa parte ya tienen número ese día.
-function avance(fecha, cat, grupo) {
+// Cuántos productos de esa parte (y familia) ya tienen número ese día.
+function avance(fecha, cat, parte, familia) {
   const s = stockDelDia(fecha);
-  const l = productosDe(cat, grupo);
+  const l = productosDe(cat, parte, familia);
   return { hechos: l.filter(p => s[p.nombre]).length, total: l.length };
 }
 function faltanDelDia(fecha) {
@@ -782,13 +855,15 @@ function diaHtml(fecha) {
     return l.length ? cat + ": " + l.filter(p => s[p.nombre]).length + " de " + l.length : "";
   }).filter(Boolean).join(" · ");
   let body = "";
-  CATEGORIAS.forEach(cat => GRUPOS.forEach(g => {
-    const l = productosDe(cat, g);
-    if (!l.length) return;
-    body += '<div class="day-sub">' + esc(cat) + ' · ' + esc(g) + '</div>';
-    body += l.map(p => s[p.nombre]
-      ? '<div class="g-line"><span>' + esc(p.nombre) + '</span><span class="q">' + fmtN(s[p.nombre].cantidad) + " " + esc(unitLabel(p.unidad)) + '</span></div>'
-      : '<div class="g-line falta"><span>' + esc(p.nombre) + '</span><span>falta</span></div>').join("");
+  CATEGORIAS.forEach(cat => familiasDe(cat).forEach(f => {
+    const l = productosDe(cat, null, f);
+    body += '<div class="day-sub">' + esc(cat) + ' · ' + esc(f) + '</div>';
+    body += l.map(p => {
+      if (!s[p.nombre]) return '<div class="g-line falta"><span>' + esc(p.nombre) + '</span><span>falta</span></div>';
+      const eq = equivalente(p, Number(s[p.nombre].cantidad));
+      return '<div class="g-line"><span>' + esc(p.nombre) + '</span><span class="q">' + fmtN(s[p.nombre].cantidad) + " " + esc(unitLabel(p.unidad)) +
+        (eq ? ' <span class="lt">· ' + esc(eq) + '</span>' : "") + '</span></div>';
+    }).join("");
   }));
   // Lo cargado de productos que ya no están en la lista, igual se muestra.
   const otros = Object.keys(s).filter(n => !prodByName(n));
@@ -883,18 +958,22 @@ function renderConfig() {
   if (planillaUrl) sheet.href = planillaUrl;
   document.getElementById("countProductos").textContent = productos.length;
   document.getElementById("countUnidades").textContent = UNITS.length;
+  document.getElementById("countCantidades").textContent = CANTS.length;
 
   let html = "";
-  CATEGORIAS.forEach(cat => GRUPOS.forEach(g => {
-    const l = productosDe(cat, g);
-    const key = cat + "|" + g;
-    html += '<details class="cfg-group" data-key="' + esc(key) + '"' + (cfgAbiertos.has(key) ? " open" : "") + '><summary><span>' + esc(cat) + ' · ' + esc(g) + '</span>' +
-      '<span class="cfg-count">' + (g === "Top 10" ? l.length + " de " + TOP_MAX : l.length) + ' ▾</span></summary>';
-    html += l.length ? '<div class="cfg-list">' + l.map(p =>
-      '<button class="cfg-row" data-prod="' + esc(p.nombre) + '"><div><div class="n">' + esc(p.nombre) + '</div><div class="d">' + esc(p.unidad) + '</div></div><span>›</span></button>'
-    ).join("") + '</div>' : '<div class="help-text" style="margin:0;">Nada todavía.</div>';
+  const fila = p => '<button class="cfg-row" data-prod="' + esc(p.nombre) + '"><div><div class="n">' + (esTop(p) ? "★ " : "") + esc(p.nombre) + '</div><div class="d">' +
+    esc([p.unidad, p.contenido].filter(Boolean).join(" · ")) + '</div></div><span>›</span></button>';
+  const grupo = (key, titulo, cuenta, l) => {
+    html += '<details class="cfg-group" data-key="' + esc(key) + '"' + (cfgAbiertos.has(key) ? " open" : "") + '><summary><span>' + esc(titulo) + '</span>' +
+      '<span class="cfg-count">' + cuenta + ' ▾</span></summary>';
+    html += l.length ? '<div class="cfg-list">' + l.map(fila).join("") + '</div>' : '<div class="help-text" style="margin:0;">Nada todavía.</div>';
     html += '</details>';
-  }));
+  };
+  CATEGORIAS.forEach(cat => {
+    const top = productosDe(cat, "Top 10");
+    grupo(cat + "|Top 10", "★ " + cat + " · Top 10", top.length + " de " + TOP_MAX, top);
+    familiasDe(cat).forEach(f => { const l = productosDe(cat, null, f); grupo(cat + "|f|" + f, cat + " · " + f, l.length, l); });
+  });
   const pl = document.getElementById("productList");
   pl.innerHTML = html;
   pl.querySelectorAll("details.cfg-group").forEach(d => d.addEventListener("toggle", () => {
@@ -909,6 +988,14 @@ function renderConfig() {
     if (UNITS.length <= 1) { alert("Tiene que quedar al menos una unidad."); return; }
     if (!confirm("¿Eliminar la unidad «" + u + "»? Los productos que ya la usan no cambian.")) return;
     queueChange("config_remove", { list: "unidades", value: u });
+  }));
+
+  const cl = document.getElementById("cantList");
+  cl.innerHTML = CANTS.map(u => '<div class="cfg-row"><span class="n">' + esc(u) + '</span><button class="x" data-cant="' + esc(u) + '" aria-label="Eliminar">&times;</button></div>').join("");
+  cl.querySelectorAll("[data-cant]").forEach(b => b.addEventListener("click", () => {
+    const u = b.getAttribute("data-cant");
+    if (!confirm("¿Eliminar la cantidad «" + u + "»? Los productos que ya la usan no cambian.")) return;
+    queueChange("config_remove", { list: "cantidades", value: u });
   }));
 
   const info = [];
@@ -1009,10 +1096,12 @@ function closeOverlay(id) { document.getElementById(id).classList.remove("open")
 // Hay un solo stock por día. Elegir una fecha que ya tiene stock abre ese
 // mismo stock, con lo cargado, para completarlo o corregirlo. Cada cambio
 // se agrega a la planilla (queda el historial) y vale lo último.
-let wStep = 1, wFecha = "", wCat = "", wGrupo = "";
+let wStep = 1, wFecha = "", wCat = "", wGrupo = "", wFam = "";
+// Pasos: 1 fecha, 2 Barra/Cocina, 3 Top 10/Completo, 5 familia (solo en
+// Completo), 4 cantidades.
 
 function openCarga(fecha) {
-  wCat = ""; wGrupo = "";
+  wCat = ""; wGrupo = ""; wFam = "";
   document.getElementById("cargaOverlay").classList.add("open");
   if (fecha) { wFecha = fecha; goStep(2); return; }
   wFecha = todayStr();
@@ -1028,7 +1117,7 @@ function goStep(n) {
 
 function hechoHtml(av) {
   if (!av.total) return "";
-  if (av.hechos === av.total) return '<span class="done">✓ Completo</span>';
+  if (av.hechos === av.total) return '<span class="done">✓ Listo</span>';
   return av.hechos ? '<span class="done" style="background:var(--gold-bg);color:var(--gold);">' + av.hechos + ' de ' + av.total + '</span>' : "";
 }
 
@@ -1045,19 +1134,20 @@ function renderCerrar(boxId) {
 }
 
 function renderWizard() {
-  [1, 2, 3, 4].forEach(n => { document.getElementById("wStep" + n).style.display = n === wStep ? "block" : "none"; });
+  [1, 2, 3, 4, 5].forEach(n => { document.getElementById("wStep" + n).style.display = n === wStep ? "block" : "none"; });
   const crumb = [];
   if (wStep > 1) crumb.push("Stock del " + dayLabelLong(wFecha));
   if (wStep > 2) crumb.push(wCat);
-  if (wStep > 3) crumb.push(wGrupo);
+  if (wStep === 4 || wStep === 5) crumb.push(wGrupo);
+  if (wStep === 4 && wGrupo === "Completo") crumb.push(wFam);
   document.getElementById("wCrumb").textContent = crumb.join(" · ");
   document.getElementById("wTitle").textContent =
-    wStep === 1 ? "Cargar stock" : wStep === 2 ? "¿Qué vas a contar?" : wStep === 3 ? "¿Qué parte?" : "Cantidades";
+    wStep === 1 ? "Cargar stock" : wStep === 2 ? "¿Qué vas a contar?" : wStep === 3 ? "¿Top 10 o completo?" : wStep === 5 ? "¿Qué familia?" : "Cantidades";
 
   if (wStep === 2) {
     const c = document.getElementById("wCats");
     c.innerHTML = CATEGORIAS.map(cat => {
-      const av = GRUPOS.map(g => avance(wFecha, cat, g)).reduce((x, y) => ({ hechos: x.hechos + y.hechos, total: x.total + y.total }), { hechos: 0, total: 0 });
+      const av = avance(wFecha, cat);
       return '<button class="choice ' + catCls(cat) + '" data-cat="' + esc(cat) + '"><span>' + esc(cat) +
         '<small>' + av.total + (av.total === 1 ? " producto" : " productos") + '</small></span>' + hechoHtml(av) + '</button>';
     }).join("");
@@ -1066,18 +1156,32 @@ function renderWizard() {
   }
   if (wStep === 3) {
     const c = document.getElementById("wGrupos");
-    c.innerHTML = GRUPOS.map(g => {
+    c.innerHTML = PARTES.map(g => {
       const av = avance(wFecha, wCat, g);
+      const sub = !av.total ? "No hay productos" : g === "Top 10" ? av.total + (av.total === 1 ? " producto" : " productos") + " · recuento rápido"
+        : "Todos (" + av.total + "), por familia · fin de mes";
       return '<button class="choice ' + catCls(wCat) + '" data-grupo="' + esc(g) + '"' + (av.total ? "" : " disabled") + '><span>' + esc(g) +
-        '<small>' + (av.total ? av.total + (av.total === 1 ? " producto" : " productos") : "No hay productos en este grupo") + '</small></span>' + hechoHtml(av) + '</button>';
+        '<small>' + sub + '</small></span>' + hechoHtml(av) + '</button>';
     }).join("");
-    c.querySelectorAll("[data-grupo]").forEach(b => b.addEventListener("click", () => { wGrupo = b.getAttribute("data-grupo"); openLista(); }));
+    c.querySelectorAll("[data-grupo]").forEach(b => b.addEventListener("click", () => {
+      wGrupo = b.getAttribute("data-grupo");
+      if (wGrupo === "Completo") goStep(5); else openLista();
+    }));
     renderCerrar("wCerrar3");
+  }
+  if (wStep === 5) {
+    const c = document.getElementById("wFams");
+    c.innerHTML = familiasDe(wCat).map(f => {
+      const av = avance(wFecha, wCat, null, f);
+      return '<button class="choice ' + catCls(wCat) + '" data-fam="' + esc(f) + '"><span>' + esc(f) +
+        '<small>' + av.total + (av.total === 1 ? " producto" : " productos") + '</small></span>' + hechoHtml(av) + '</button>';
+    }).join("");
+    c.querySelectorAll("[data-fam]").forEach(b => b.addEventListener("click", () => { wFam = b.getAttribute("data-fam"); openLista(); }));
   }
 }
 
 function openLista() {
-  const lista = productosDe(wCat, wGrupo);
+  const lista = wGrupo === "Top 10" ? productosDe(wCat, "Top 10") : productosDe(wCat, null, wFam);
   const dia = stockDelDia(wFecha);
   const ya = lista.filter(p => dia[p.nombre]).length;
   document.getElementById("wDone").innerHTML = ya
@@ -1089,7 +1193,7 @@ function openLista() {
   document.getElementById("wNota").value = "";
   document.getElementById("wErr").style.display = "none";
   const box = document.getElementById("wLista");
-  box.innerHTML = lista.map(p => qRowHtml(p.nombre, p.unidad)).join("");
+  box.innerHTML = lista.map(qRowHtml).join("");
   lista.forEach(p => {
     if (!dia[p.nombre]) return;
     const inp = box.querySelector('input[data-item="' + CSS.escape(p.nombre) + '"]');
@@ -1104,11 +1208,12 @@ function openLista() {
 const FRACCIONES = [[0.25, "¼"], [0.5, "½"], [0.75, "¾"]];
 function conFracciones(unidad) { return /botella/i.test(unidad || ""); }
 
-function qRowHtml(nombre, unidad) {
-  const fr = conFracciones(unidad)
+function qRowHtml(p) {
+  const fr = conFracciones(p.unidad)
     ? '<div class="fracs">' + FRACCIONES.map(f => '<button type="button" class="frac" data-frac="' + f[0] + '">+' + f[1] + '</button>').join("") + '</div>' : "";
-  return '<div class="q-row" data-name="' + esc(norm(nombre)) + '"><div class="q-name">' + esc(nombre) + '<small>' + esc(unitLabel(unidad)) + '</small></div>' +
-    '<input type="text" inputmode="decimal" autocomplete="off" data-item="' + esc(nombre) + '" placeholder="Cant.">' + fr + '</div>';
+  return '<div class="q-row" data-name="' + esc(norm(p.nombre)) + '"><div class="q-name">' + esc(p.nombre) +
+    '<small>' + esc([unitLabel(p.unidad), p.contenido].filter(Boolean).join(" · ")) + '</small><span class="eq"></span></div>' +
+    '<input type="text" inputmode="decimal" autocomplete="off" data-item="' + esc(p.nombre) + '" placeholder="Cant.">' + fr + '</div>';
 }
 
 // Marca la fracción que tiene el número escrito (3,5 → ½).
@@ -1118,6 +1223,9 @@ function markFrac(row) {
   const resto = q === null || isNaN(q) ? -1 : Math.round((q - Math.floor(q)) * 100) / 100;
   row.querySelectorAll(".frac").forEach(b => b.classList.toggle("sel", Number(b.getAttribute("data-frac")) === resto));
   row.classList.toggle("filled", inp.value.trim() !== "");
+  // Al lado, cuántos litros (o kilos) son: "= 2,63 l".
+  const eq = q === null || isNaN(q) ? "" : equivalente(prodByName(inp.getAttribute("data-item")), q);
+  row.querySelector(".eq").textContent = eq ? "= " + eq : "";
 }
 
 function bindQRows() {
@@ -1158,6 +1266,9 @@ document.getElementById("wNext1").addEventListener("click", () => {
   goStep(2);
 });
 document.querySelectorAll("#cargaOverlay [data-back]").forEach(b => b.addEventListener("click", () => goStep(Number(b.getAttribute("data-back")))));
+// Desde las cantidades se vuelve a las familias (Completo) o a Top 10/Completo.
+function pasoAnterior() { return wGrupo === "Completo" ? 5 : 3; }
+document.getElementById("wBack4").addEventListener("click", () => goStep(pasoAnterior()));
 document.querySelectorAll("#cargaOverlay [data-close]").forEach(b => b.addEventListener("click", () => closeOverlay("cargaOverlay")));
 
 function wErr(msg) { const e = document.getElementById("wErr"); e.textContent = msg; e.style.display = "block"; }
@@ -1178,7 +1289,7 @@ document.getElementById("wSave").addEventListener("click", () => {
   });
   if (bad) { wErr("Revisá la cantidad de «" + bad + "»: tiene que ser un número (ej: 3 o 2,5)."); return; }
   if (borrado) { wErr("«" + borrado + "» ya estaba cargado: no lo dejes vacío. Si no hay ninguno, poné 0."); return; }
-  if (!items.length) { showToast("No hubo cambios"); goStep(3); return; }
+  if (!items.length) { showToast("No hubo cambios"); goStep(pasoAnterior()); return; }
 
   const carga = newId();
   const cargado = nowStamp();
@@ -1192,26 +1303,40 @@ document.getElementById("wSave").addEventListener("click", () => {
     };
   });
   queueChange("add", { conteos: nuevos });
-  showToast("Guardado ✓ " + wCat + " · " + wGrupo);
-  // Vuelve a elegir la parte, con la misma fecha, para seguir cargando.
-  goStep(3);
+  showToast("Guardado ✓ " + wCat + " · " + (wGrupo === "Completo" ? wFam : wGrupo));
+  // Vuelve a elegir la familia (o la parte), con la misma fecha, para seguir cargando.
+  goStep(pasoAnterior());
 });
 
 // ============================================================
 // PRODUCTOS
 // ============================================================
-let editingProduct = null, pCat = "Barra", pGrupo = "Resto";
+let editingProduct = null, pCat = "Barra", pGrupo = "Resto", pFamPedida = null;
+document.getElementById("pFamilia").addEventListener("change", (e) => {
+  document.getElementById("pFamNueva").style.display = e.target.value === "__nueva" ? "block" : "none";
+  if (e.target.value === "__nueva") document.getElementById("pFamNueva").focus();
+});
 
 function renderProductToggles() {
   document.getElementById("pCat").innerHTML = CATEGORIAS.map(c => '<button type="button" data-c="' + esc(c) + '"' + (c === pCat ? ' class="sel"' : "") + '>' + esc(c) + '</button>').join("");
   const enTop = productosDe(pCat, "Top 10").filter(p => !editingProduct || p.nombre !== editingProduct.nombre).length;
   const lleno = enTop >= TOP_MAX;
   if (lleno && pGrupo === "Top 10") pGrupo = "Resto";
-  document.getElementById("pGrupo").innerHTML = GRUPOS.map(g => '<button type="button" data-g="' + esc(g) + '"' + (g === pGrupo ? ' class="sel"' : "") +
-    (g === "Top 10" && lleno ? " disabled" : "") + '>' + esc(g) + '</button>').join("");
+  document.getElementById("pGrupo").innerHTML = [["Top 10", "Sí"], ["Resto", "No"]].map(g => '<button type="button" data-g="' + g[0] + '"' + (g[0] === pGrupo ? ' class="sel"' : "") +
+    (g[0] === "Top 10" && lleno ? " disabled" : "") + '>' + g[1] + '</button>').join("");
   document.getElementById("pGrupoHelp").textContent = lleno
-    ? "El Top 10 de " + pCat.toLowerCase() + " ya tiene " + TOP_MAX + " productos. Para sumar este, primero pasá otro al Resto."
+    ? "El Top 10 de " + pCat.toLowerCase() + " ya tiene " + TOP_MAX + " productos. Para sumar este, primero sacá otro del Top 10."
     : "Top 10 de " + pCat.toLowerCase() + ": " + enTop + " de " + TOP_MAX + ".";
+  // Familias de la categoría elegida, más la opción de crear una nueva.
+  const fSel = document.getElementById("pFamilia");
+  const actual = fSel.value;
+  const fams = familiasDe(pCat).filter(f => f !== SIN_FAMILIA);
+  fSel.innerHTML = '<option value="">Elegí la familia…</option>' + fams.map(f => '<option value="' + esc(f) + '">' + esc(f) + '</option>').join("") +
+    '<option value="__nueva">+ Nueva familia…</option>';
+  const quiero = pFamPedida !== null ? pFamPedida : actual;
+  fSel.value = fams.includes(quiero) || quiero === "__nueva" ? quiero : "";
+  pFamPedida = null;
+  document.getElementById("pFamNueva").style.display = fSel.value === "__nueva" ? "block" : "none";
   document.querySelectorAll("#pCat [data-c]").forEach(b => b.addEventListener("click", () => { pCat = b.getAttribute("data-c"); renderProductToggles(); }));
   document.querySelectorAll("#pGrupo [data-g]").forEach(b => b.addEventListener("click", () => { pGrupo = b.getAttribute("data-g"); renderProductToggles(); }));
 }
@@ -1223,8 +1348,14 @@ function openProduct(p) {
   nombre.value = p ? p.nombre : "";
   nombre.disabled = !!p;
   pCat = p ? normCat(p.categoria) : "Barra";
-  pGrupo = p ? p.grupo : "Resto";
+  pGrupo = p && esTop(p) ? "Top 10" : "Resto";
+  pFamPedida = p ? (p.familia || "") : "";
+  document.getElementById("pFamNueva").value = "";
   renderProductToggles();
+  const cants = CANTS.slice();
+  if (p && p.contenido && !cants.includes(p.contenido)) cants.push(p.contenido);
+  document.getElementById("pCont").innerHTML = '<option value="">Sin dato</option>' + cants.map(u => '<option value="' + esc(u) + '">' + esc(u) + '</option>').join("");
+  document.getElementById("pCont").value = p ? (p.contenido || "") : "";
   const units = UNITS.slice();
   if (p && p.unidad && !units.includes(p.unidad)) units.push(p.unidad);
   document.getElementById("pUnidad").innerHTML = units.map(u => '<option value="' + esc(u) + '">' + esc(u) + '</option>').join("");
@@ -1240,7 +1371,11 @@ document.getElementById("pSave").addEventListener("click", () => {
   const nombre = document.getElementById("pNombre").value.trim();
   if (!nombre) { err.textContent = "Poné el nombre del producto."; err.style.display = "block"; return; }
   if (!editingProduct && productos.some(x => norm(x.nombre) === norm(nombre))) { err.textContent = "Ese producto ya existe."; err.style.display = "block"; return; }
-  const prod = { nombre: nombre, categoria: pCat, grupo: pGrupo, unidad: document.getElementById("pUnidad").value };
+  const fSel = document.getElementById("pFamilia").value;
+  const familia = fSel === "__nueva" ? document.getElementById("pFamNueva").value.trim() : fSel;
+  if (!familia) { err.textContent = fSel === "__nueva" ? "Escribí el nombre de la familia nueva." : "Elegí la familia del producto."; err.style.display = "block"; return; }
+  const prod = { nombre: nombre, categoria: pCat, grupo: pGrupo, unidad: document.getElementById("pUnidad").value,
+    familia: familia, contenido: document.getElementById("pCont").value };
   closeOverlay("prodOverlay");
   queueChange("product_set", { producto: prod });
   showToast("Producto guardado");
@@ -1264,10 +1399,20 @@ document.getElementById("addUnit").addEventListener("click", () => {
   input.value = "";
   queueChange("config_add", { list: "unidades", value: clean });
 });
+document.getElementById("addCant").addEventListener("click", () => {
+  const input = document.getElementById("newCant");
+  const clean = input.value.trim();
+  if (!clean) return;
+  if (CANTS.some(u => norm(u) === norm(clean))) { alert("Esa cantidad ya existe."); return; }
+  if (!medidaDe(clean)) { alert("Escribila con número y medida, por ejemplo: 750 cc, 1 l, 1,5 l o 5 kg."); return; }
+  input.value = "";
+  queueChange("config_add", { list: "cantidades", value: clean });
+});
+document.getElementById("newCant").addEventListener("keydown", (e) => { if (e.key === "Enter") document.getElementById("addCant").click(); });
 document.getElementById("newUnit").addEventListener("keydown", (e) => { if (e.key === "Enter") document.getElementById("addUnit").click(); });
 document.getElementById("syncNowBtn").addEventListener("click", () => { showToast("Actualizando…"); syncNow(); });
 document.getElementById("downloadBackup").addEventListener("click", () => {
-  const backup = { exportadoEl: new Date().toISOString(), bar: curBarName, conteos, productos, unidades: UNITS };
+  const backup = { exportadoEl: new Date().toISOString(), bar: curBarName, conteos, productos, unidades: UNITS, cantidades: CANTS };
   saveFile(KEY_PREFIX.replace(/_+$/, "") + "-" + slug(curBarName) + "-backup-" + todayStr() + ".json", JSON.stringify(backup, null, 2), "application/json");
 });
 document.getElementById("openCarga").addEventListener("click", () => openCarga());

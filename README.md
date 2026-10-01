@@ -23,8 +23,12 @@ propia dirección:
 ## Stock de bares
 
 - Sirve para **cargar el stock contado a una fecha**. El encargado elige la
-  fecha, Barra o Cocina, Top 10 o Resto, y anota la cantidad de cada
-  producto (la unidad aparece sola).
+  fecha, Barra o Cocina, y el **Top 10** (recuento rápido) o el **Completo**
+  (todo, por familia: Vermuts, Vinos…). Anota la cantidad de cada producto
+  y la app muestra al lado cuántos litros (o kilos) son.
+- Los productos se arman en la hoja **Catálogo** de la planilla (Producto,
+  Categoría, Grupo, Unidad, Familia, Contenido); el orden de esa hoja es el
+  orden en que aparecen en la app.
 - **Una planilla por bar**, cada una con el código de
   [`stockbares/apps-script/Code.gs`](stockbares/apps-script/Code.gs) (los
   pasos están al principio del archivo). En la hoja **Resumen** se ven los

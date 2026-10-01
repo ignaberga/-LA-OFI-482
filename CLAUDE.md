@@ -29,30 +29,38 @@ quiere armar.
 - La primera versión (compras, ventas por trago, pases, bajas y control de
   faltantes) se sacó y quedó guardada en `archivo/stockbares-v1-control/`.
 - **Un solo stock por día.** Flujo (cargan el **Encargado** y **Noel**):
-  fecha → Barra o Cocina → Top 10 o Resto → lista de esos productos con su
-  casillero y la unidad (botellas con botones +¼ +½ +¾) → Guardar. Si la
-  fecha ya tiene stock, se abre ese mismo con lo cargado para completar o
-  corregir; se guardan solo los cambios (nuevos renglones en Conteos, vale
-  el último de cada producto en esa fecha). Inicio e Historial muestran una
-  tarjeta por día (ABIERTO/CERRADO, cuánto falta).
+  fecha → Barra o Cocina → **Top 10** (recuento rápido: solo los marcados) o
+  **Completo** (todos, a fin de mes) → en Completo, la **familia** (Vermuts,
+  Vinos…) → lista de esos productos con casillero, unidad y contenido
+  (botellas con +¼ +½ +¾) y al lado el **equivalente en litros/kilos**
+  (cantidad × contenido) → Guardar. Si la fecha ya tiene stock, se abre ese
+  mismo con lo cargado; se guardan solo los cambios (vale el último de cada
+  producto en esa fecha). Inicio e Historial: una tarjeta por día, por
+  familia, con litros.
 - **Cerrar:** el encargado (o Noel) cierra el stock del día desde la carga o
   la tarjeta, con "¿Estás seguro…?". Cerrado = nadie lo modifica; la
   planilla rechaza cargas en un día cerrado. Solo **Noel** reabre y borra un
   día entero. Hoja **Cierres** en la planilla. Ignacio no es usuario de la app.
-- **Noel** arma los productos en Config: nombre, categoría (Barra/Cocina; las primeras pruebas se guardaron como
-  Bebidas/Comida y se leen con el nombre nuevo, sin renombrar la planilla),
-  grupo (Top 10, máximo 10 por categoría, o Resto) y unidad. En Config cada grupo (Barra · Top 10,
-  etc.) es una lista desplegable. Tiene el botón "Abrir la planilla" en
+- **Catálogo** (hoja de la planilla, la arman Ignacio y Noel ahí mismo, es lo
+  más rápido): Producto | Categoría (Barra/Cocina; "Bebidas"/"Comida" viejos
+  se leen como Barra/Cocina) | Grupo ("Top 10" o cualquier otra cosa = no;
+  máximo 10 por categoría) | Unidad | Familia | Contenido ("750 cc", "1 l",
+  "5 kg"; un número solo = cc). **El orden de familias y productos en la app
+  y en el Resumen es el de esta hoja.** Desde la app (Config) también se crean
+  productos: piden familia (obligatoria, se elige o se crea), Top 10 sí/no,
+  unidad y contenido (lista "Cantidades" de Config). En Config, una lista
+  desplegable por Top 10 y por familia. Tiene el botón "Abrir la planilla" en
   Config (no en Inicio). Reabrir y borrar día también los exige el Apps
   Script (`QUIEN_PUEDE_BORRAR`); cerrar, `PUEDEN_CERRAR`. Josefina
   quedó con los mismos permisos que Noel salvo borrar.
 - Noel mira el stock en la planilla: hoja **Conteos** (un renglón por
   producto contado) y hoja **Resumen**, que el Apps Script rearma después de
-  cada cambio (productos en filas, fechas en columnas, la más nueva primero;
+  cada cambio (Categoría, Familia, Top 10, Producto, Contenido, Unidad y
+  después las fechas en columnas, la más nueva primero;
   al lado de cada fecha una columna "Dif." contra el conteo anterior de ese
   producto: bajas en rojo, y con fondo rojo si bajó más de `BAJA_FUERTE`
   = 30 %; la fecha dice "(cerrado)" si el día está cerrado).
-  Hoja **Catálogo**: los productos. Hoja **Config**: las unidades.
+  Hoja **Config**: unidades y cantidades.
 - **Una planilla (y un Apps Script) por bar**, todas de Noel. El link de
   instalación lleva uno o varios pares `vincular=<exec>&bar=<Nombre>` más
   `quien=<Persona>`; Noel recibe un link con todos sus bares y ve un selector
