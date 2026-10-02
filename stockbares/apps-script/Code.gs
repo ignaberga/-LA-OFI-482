@@ -45,9 +45,9 @@
 
 // Quienes pueden reabrir un stock cerrado y borrar un dia. Tiene que
 // coincidir con los permisos de la app (PERMISOS en stockbares/index.html).
-const QUIEN_PUEDE_BORRAR = ["Noel"];
+const QUIEN_PUEDE_BORRAR = ["Noel", "Ignacio"];
 // Quienes pueden cerrar el stock de un dia.
-const PUEDEN_CERRAR = ["Encargado", "Noel"];
+const PUEDEN_CERRAR = ["Encargado", "Noel", "Ignacio"];
 
 const SHEET_CONTEOS = "Conteos";
 const SHEET_CATALOGO = "Catálogo";

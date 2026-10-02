@@ -25,7 +25,8 @@ quiere armar.
 
 - Pedido de **Noel** (dueño de los bares, jefe de Ignacio). **Solo registra el
   stock contado a una fecha**: las compras y las ventas Noel ya las tiene en
-  su sistema de gestión, y la comparación la hace él. Primer bar: **Archie**.
+  su sistema de gestión, y la comparación la hace él. Bares: **Archie** y **Hugo** (cada uno con su planilla;
+  Noel e Ignacio tienen un link con los dos y eligen el bar arriba).
 - La primera versión (compras, ventas por trago, pases, bajas y control de
   faltantes) se sacó y quedó guardada en `archivo/stockbares-v1-control/`.
 - **Un solo stock por día.** Flujo (cargan el **Encargado** y **Noel**):
@@ -40,7 +41,8 @@ quiere armar.
 - **Cerrar:** el encargado (o Noel) cierra el stock del día desde la carga o
   la tarjeta, con "¿Estás seguro…?". Cerrado = nadie lo modifica; la
   planilla rechaza cargas en un día cerrado. Solo **Noel** reabre y borra un
-  día entero. Hoja **Cierres** en la planilla. Ignacio no es usuario de la app.
+  día entero (también **Ignacio**, que desde octubre 2026 tiene usuario propio con
+  los mismos permisos que Noel). Hoja **Cierres** en la planilla.
 - **Catálogo** (hoja de la planilla, la arman Ignacio y Noel ahí mismo, es lo
   más rápido): Producto | Categoría (Barra/Cocina; "Bebidas"/"Comida" viejos
   se leen como Barra/Cocina) | Grupo ("Top 10" o cualquier otra cosa = no;
@@ -51,8 +53,9 @@ quiere armar.
   unidad y contenido (lista "Cantidades" de Config). En Config, una lista
   desplegable por Top 10 y por familia. Tiene el botón "Abrir la planilla" en
   Config (no en Inicio). Reabrir y borrar día también los exige el Apps
-  Script (`QUIEN_PUEDE_BORRAR`); cerrar, `PUEDEN_CERRAR`. Josefina
-  quedó con los mismos permisos que Noel salvo borrar.
+  Script (`QUIEN_PUEDE_BORRAR`); cerrar, `PUEDEN_CERRAR`. Josefina ya
+  no es usuaria (octubre 2026): usan la app Noel, Ignacio y los encargados de
+  Archie y Hugo.
 - Noel mira el stock en la planilla: hoja **Conteos** (un renglón por
   producto contado) y hoja **Resumen**, que el Apps Script rearma después de
   cada cambio (Categoría, Familia, Top 10, Producto, Contenido, Unidad y
