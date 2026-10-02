@@ -444,7 +444,7 @@ const APP_NAME = "Stock";
 // Script, y cerrar con PUEDEN_CERRAR.
 const PERMISOS = {
   "Noel": ["cargar", "cerrar", "reabrir", "ver_todo", "config", "borrar"],
-  "Ignacio": ["cargar", "cerrar", "reabrir", "ver_todo", "config", "borrar"],
+  "Josefina": ["ver_todo", "config"],
   "Encargado": ["cargar", "cerrar"]
 };
 const PEOPLE = Object.keys(PERMISOS);
@@ -911,7 +911,7 @@ function cerrarDia(fecha) {
   const faltan = faltanDelDia(fecha);
   if (!confirm("¿Estás seguro de que querés cerrar el stock del " + dayLabelLong(fecha) + "?\n\n" +
     (faltan.length ? "Todavía " + (faltan.length === 1 ? "falta cargar 1 producto" : "faltan cargar " + faltan.length + " productos") + ".\n\n" : "") +
-    "Una vez cerrado ya no se puede modificar. Solo Noel (o Ignacio) lo puede reabrir.")) return false;
+    "Una vez cerrado ya no se puede modificar. Solo Noel lo puede reabrir.")) return false;
   queueChange("cerrar", { fecha: fecha, quien: phoneOwner, cuando: nowStamp() });
   showToast("Stock del " + dayLabel(fecha) + " cerrado ✓");
   return true;

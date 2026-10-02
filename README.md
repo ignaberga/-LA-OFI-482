@@ -35,9 +35,8 @@ propia dirección:
   productos en filas y las fechas en columnas.
 - **Un stock por día**, que se completa y corrige hasta que el encargado lo
   **cierra**. Cerrado, nadie lo modifica: solo Noel lo puede reabrir.
-- **Un link por persona.** Noel e Ignacio arman la lista de productos,
-  reabren y borran días; cargan y cierran el stock los encargados, Noel e
-  Ignacio.
+- **Un link por persona.** Noel arma la lista de productos, reabre y borra
+  días; cargan y cierran el stock el encargado y Noel.
 - La versión anterior (con compras, ventas y control de faltantes) está en
   [`archivo/`](archivo/).
 
