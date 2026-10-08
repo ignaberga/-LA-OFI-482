@@ -37,6 +37,12 @@ propia dirección:
   **cierra**. Cerrado, nadie lo modifica: solo Noel lo puede reabrir.
 - **Un link por persona.** Noel arma la lista de productos, reabre y borra
   días; cargan y cierran el stock el encargado y Noel.
+- **Pedidos:** el encargado (o Noel) arma un pedido a uno o varios
+  proveedores con los productos del catálogo; la app muestra el precio de
+  costo y el total, y lo manda por WhatsApp al dueño del bar para que lo
+  apruebe. Necesita la **planilla central** (un solo código para todos los
+  bares, con las hojas Bares, Personas y Precios), en
+  [`stockbares/apps-script/Central.gs`](stockbares/apps-script/Central.gs).
 - La versión anterior (con compras, ventas y control de faltantes) está en
   [`archivo/`](archivo/).
 

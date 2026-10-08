@@ -221,6 +221,21 @@
   }
   .toast.show { opacity: 1; }
   .noaccess { padding: 40px 24px; text-align: center; color: var(--ink-soft); line-height: 1.5; }
+  .choice.prov { padding: 15px 16px; font-size: 17px; }
+  .choice .pd-badge { font-size: 13px; font-weight: 700; color: var(--wine-dark); background: var(--wine-bg); padding: 5px 10px; border-radius: 20px; white-space: nowrap; }
+  .pd-total { background: var(--gold-bg); border-radius: 10px; padding: 10px 12px; font-size: 14px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+  .pd-total strong { font-size: 18px; white-space: nowrap; }
+  .pd-total small { display: block; font-size: 12px; color: var(--ink-soft); }
+  .pd-foot { position: sticky; bottom: 0; background: var(--surface); padding-top: 10px; margin-top: 8px; }
+  .pd-foot .pd-total { margin: 0; }
+  .pd-foot .modal-actions { position: static; margin-top: 0; }
+  .q-name .sp, .g-line .sp { color: var(--rust); font-weight: 700; }
+  .pd-prov { display: flex; justify-content: space-between; gap: 10px; font-size: 14px; font-weight: 700; margin: 12px 0 2px; padding-top: 10px; border-top: 1px solid var(--line); }
+  .pd-prov:first-child { margin-top: 0; padding-top: 0; border-top: none; }
+  .btn-wa { margin-top: 10px; width: 100%; padding: 12px 0; border-radius: 10px; border: none; background: #1F7A4A; color: #fff; font-weight: 700; font-size: 15px; }
+  .big-btn.pedido { background: var(--wine-dark); }
+  .aviso { margin: 0 20px 16px; border-radius: var(--radius); padding: 12px 16px; font-size: 14px; line-height: 1.4; background: var(--gold-bg); color: var(--gold); border: 1px solid var(--gold); }
+  .aviso button { margin-top: 8px; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--gold); background: var(--surface); color: var(--gold); font-weight: 700; font-size: 13px; }
   .noaccess strong { display: block; color: var(--ink); font-size: 18px; margin-bottom: 8px; }
 </style>
 </head>
@@ -244,6 +259,15 @@
     <div class="groups" id="recentList"></div>
   </div>
 
+  <!-- PEDIDOS -->
+  <div id="tab-pedidos" class="tab-panel">
+    <div class="aviso" id="sinPrecioAviso" style="display:none"></div>
+    <button class="big-btn pedido" id="openPedido">Hacer pedido<small>A uno o varios proveedores, para que lo apruebe el dueño</small></button>
+    <div class="section-title">Pedidos hechos</div>
+    <div class="groups" id="pedidoList"></div>
+    <button class="btn-more" id="pedidoMore" style="display:none">Ver más</button>
+  </div>
+
   <!-- HISTORIAL -->
   <div id="tab-historial" class="tab-panel">
     <div class="section-title" style="padding-top:4px;">Todos los días</div>
@@ -262,6 +286,15 @@
           <div class="help-text">Cada producto va en Barra o Cocina, en una familia (Vermuts, Vinos…), con su unidad y su contenido. Hasta 10 por categoría pueden ir en el Top 10. El orden es el de la hoja Catálogo de la planilla. Tocá uno para cambiarlo.</div>
           <div id="productList"></div>
           <button class="btn-main" id="newProduct">+ Nuevo producto</button>
+        </div>
+      </div>
+      <div class="accordion-item" id="cfgPrecios" style="display:none">
+        <button class="accordion-header" data-target="bodySinPrecio">
+          <span>Productos sin precio</span><span class="accordion-meta" id="countSinPrecio">0</span>
+        </button>
+        <div class="accordion-body" id="bodySinPrecio">
+          <div class="help-text">Estos productos del catálogo de este bar no tienen precio. Completalos en la hoja Precios de la planilla central (Sistema Bares), con el mismo nombre o con el Código Fudo. Mientras tanto, en los pedidos dicen «sin precio».</div>
+          <div class="cfg-list" id="sinPrecioList"></div>
         </div>
       </div>
       <div class="accordion-item">
@@ -303,18 +336,16 @@
     </div>
     <div class="config-section" id="backupSection">
       <div class="section-title">Copia de seguridad</div>
-      <div class="help-text">Descarga un archivo con todo lo cargado en este bar (conteos y productos).</div>
+      <div class="help-text">Descarga un archivo con todo lo cargado en este bar (conteos, pedidos y productos).</div>
       <button class="btn-main" id="downloadBackup">Descargar copia de seguridad</button>
     </div>
   </div>
 
-  <div id="noAccess" class="noaccess" style="display:none">
-    <strong>Este celular todavía no está conectado a ningún bar</strong>
-    Abrí el link de instalación que te pasaron por WhatsApp y, desde esa página, agregá la app a la pantalla de inicio.
-  </div>
+  <div id="noAccess" class="noaccess" style="display:none"></div>
 
   <nav class="tabbar" id="tabbar">
     <button class="tab-btn active" data-tab="inicio"><span class="ic">&#8962;</span>Inicio</button>
+    <button class="tab-btn" data-tab="pedidos" id="tabPedidos" style="display:none"><span class="ic">$</span>Pedidos</button>
     <button class="tab-btn" data-tab="historial"><span class="ic">&#8801;</span>Historial</button>
     <button class="tab-btn" data-tab="config"><span class="ic">&#9881;</span>Config</button>
   </nav>
@@ -408,11 +439,73 @@
         <label>Contenido de cada una</label>
         <select id="pCont"></select>
       </div>
+      <div class="field" id="pCodigoField" style="display:none">
+        <label>Código Fudo (opcional)</label>
+        <input type="text" id="pCodigo" placeholder="Para buscar el precio">
+      </div>
       <div class="err-msg" id="pErr"></div>
       <button class="btn-outline" id="pDelete" style="border-color:var(--rust); color:var(--rust); display:none;">Eliminar producto</button>
       <div class="modal-actions">
         <button class="btn-cancel" id="pCancel">Cancelar</button>
         <button class="btn-save" id="pSave">Guardar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Hacer pedido: fecha y Barra/Cocina → proveedores → productos → revisar y enviar -->
+  <div class="modal-overlay" id="pedOverlay">
+    <div class="modal-sheet">
+      <h2 id="pdTitle">Hacer pedido</h2>
+      <div class="crumb" id="pdCrumb"></div>
+
+      <div id="pdStep1">
+        <div class="field">
+          <label>Fecha del pedido</label>
+          <input type="date" id="pdFecha">
+        </div>
+        <div class="field"><label>¿Para dónde es?</label></div>
+        <div class="choices" id="pdCats"></div>
+        <div class="modal-actions">
+          <button class="btn-cancel" data-pdclose>Cancelar</button>
+        </div>
+      </div>
+
+      <div id="pdStep2" style="display:none">
+        <div class="help-text">Elegí un proveedor y anotá cuánto pedirle. Podés sumar varios proveedores en el mismo pedido.</div>
+        <input type="search" id="pdBuscarProv" placeholder="Buscar proveedor…" style="display:none; width:100%; padding:12px 13px; border-radius:10px; border:1px solid var(--line); font-size:16px; background:var(--bg); margin-bottom:10px; font-family:inherit;">
+        <div class="choices" id="pdProvs"></div>
+        <div class="pd-foot">
+          <div class="pd-total" id="pdTotal2"></div>
+          <div class="modal-actions">
+            <button class="btn-cancel" data-pdback="1">‹ Volver</button>
+            <button class="btn-save" data-pdrevisar>Revisar y enviar</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="pdStep3" style="display:none">
+        <input type="search" id="pdBuscar" placeholder="Buscar…" style="display:none; width:100%; padding:12px 13px; border-radius:10px; border:1px solid var(--line); font-size:16px; background:var(--bg); margin-bottom:8px; font-family:inherit;">
+        <div class="qlist" id="pdLista"></div>
+        <div class="pd-foot">
+          <div class="pd-total" id="pdTotal3"></div>
+          <div class="modal-actions">
+            <button class="btn-cancel" data-pdback="2">‹ Proveedores</button>
+            <button class="btn-save" data-pdrevisar>Revisar y enviar</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="pdStep4" style="display:none">
+        <div class="info-card" id="pdResumen" style="margin:0 0 14px;"></div>
+        <div class="field">
+          <label>Nota para el dueño (opcional)</label>
+          <textarea id="pdNota" placeholder="Ej: es para el fin de semana largo"></textarea>
+        </div>
+        <div class="err-msg" id="pdErr"></div>
+        <div class="modal-actions">
+          <button class="btn-cancel" data-pdback="2">‹ Seguir agregando</button>
+          <button class="btn-save" id="pdEnviar">Enviar al dueño</button>
+        </div>
       </div>
     </div>
   </div>
@@ -448,6 +541,13 @@ const PERMISOS = {
   "Encargado": ["cargar", "cerrar"]
 };
 const PEOPLE = Object.keys(PERMISOS);
+// Con la planilla central (link con central=…&clave=…), quién es cada uno
+// y qué bares ve lo dice la planilla, según su rol:
+//   pedir: hace pedidos a los proveedores para que los apruebe el dueño.
+const PERMISOS_ROL = {
+  "Administrador": ["cargar", "cerrar", "reabrir", "ver_todo", "config", "borrar", "pedir"],
+  "Encargado": ["cargar", "cerrar", "pedir"]
+};
 // Prefijo de todo lo que se guarda en el celular. Todas las apps de
 // ignaberga.github.io comparten el lugar de guardado, así que cada app
 // necesita el suyo. No cambiarlo después de que la gente empezó a cargar.
@@ -472,15 +572,20 @@ const TOP_MAX = 10;
 // ============================================================
 // BARES Y PERSONA (vienen en el link de instalación)
 // ============================================================
-// Cada bar es una planilla distinta con su propio Apps Script. El link
-// de instalación trae uno o varios pares vincular=<dirección>&bar=<nombre>
-// y la persona (quien=<Nombre>). Ese link queda grabado en el ícono de
-// la pantalla de inicio, así el celular no se desvincula nunca. Las
-// direcciones nunca van en este repositorio.
+// Dos clases de link (los dos quedan grabados en el ícono de la pantalla
+// de inicio, así el celular no se desvincula nunca):
+//   - Planilla central: central=<dirección>&clave=<clave>. Un solo Apps
+//     Script para todos los bares; la clave dice quién es la persona, su
+//     rol y a qué bares entra.
+//   - El de antes: uno o varios pares vincular=<dirección>&bar=<nombre>
+//     (una planilla con su Apps Script por bar) y quien=<Persona>.
+// Las direcciones y las claves nunca van en este repositorio.
 const BARS_KEY = KEY_PREFIX + "bares";
 const CUR_BAR_KEY = KEY_PREFIX + "bar_actual";
 const PERSON_KEY = KEY_PREFIX + "persona";
 const OUTBOX_KEY = KEY_PREFIX + "pendientes_v2";
+const CENTRAL_KEY = KEY_PREFIX + "central";
+const ROL_KEY = KEY_PREFIX + "rol";
 
 function lsGet(k, def) { try { const v = localStorage.getItem(k); return v === null ? def : v; } catch (e) { return def; } }
 function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
@@ -490,6 +595,10 @@ let bars = lsJson(BARS_KEY, []);
 if (!Array.isArray(bars)) bars = [];
 let curBarName = lsGet(CUR_BAR_KEY, "");
 let phoneOwner = lsGet(PERSON_KEY, "");
+// { url, clave } si el celular usa la planilla central.
+let central = lsJson(CENTRAL_KEY, null);
+if (!central || !central.url || !central.clave) central = null;
+let miRol = lsGet(ROL_KEY, "");
 
 function isSheetUrl(url) { return /^https:\/\/script\.google(usercontent)?\.com\//.test(url); }
 function slug(s) { return String(s).toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "") || "bar"; }
@@ -498,6 +607,21 @@ function readInstallLink() {
   const hash = (location.hash || "").replace(/^#/, "");
   if (!hash) return;
   const params = new URLSearchParams(hash);
+  const cUrl = (params.get("central") || "").trim();
+  const clave = (params.get("clave") || "").trim();
+  if (isSheetUrl(cUrl) && clave) {
+    if (!central || central.url !== cUrl || central.clave !== clave) {
+      // Otra persona u otra dirección: lo que diga la planilla de esta clave.
+      if (central && central.clave !== clave) { miRol = ""; phoneOwner = ""; lsSet(ROL_KEY, ""); lsSet(PERSON_KEY, ""); }
+      central = { url: cUrl, clave: clave };
+      lsSet(CENTRAL_KEY, JSON.stringify(central));
+    }
+    // Los bares que ya estaban (mismo nombre = misma copia local) pasan a
+    // la planilla central hasta que ella confirme cuáles le tocan.
+    bars = bars.map(b => ({ nombre: b.nombre, url: cUrl }));
+    lsSet(BARS_KEY, JSON.stringify(bars));
+    return;
+  }
   const urls = params.getAll("vincular");
   const names = params.getAll("bar");
   const linkBars = [];
@@ -512,6 +636,8 @@ function readInstallLink() {
     linkBars.push(nombre);
   });
   if (linkBars.length) {
+    // Un link de los de antes deja de usar la planilla central.
+    if (central) { central = null; lsSet(CENTRAL_KEY, "null"); }
     lsSet(BARS_KEY, JSON.stringify(bars));
     if (!linkBars.includes(curBarName)) curBarName = linkBars[0];
   }
@@ -527,7 +653,38 @@ if (!bars.some(b => b.nombre === curBarName)) curBarName = bars.length ? bars[0]
 lsSet(CUR_BAR_KEY, curBarName);
 
 function curBar() { return bars.find(b => b.nombre === curBarName) || null; }
-function can(perm) { return (PERMISOS[phoneOwner] || []).includes(perm); }
+function can(perm) { return ((central ? PERMISOS_ROL[miRol] : PERMISOS[phoneOwner]) || []).includes(perm); }
+
+// La planilla central dice quién es y qué bares ve. Cambia la lista de
+// bares del celular, pero nunca borra la copia local de ninguno.
+function aplicarYo(yo) {
+  if (!central || !yo || !Array.isArray(yo.bares)) return false;
+  phoneOwner = String(yo.persona || "");
+  miRol = String(yo.rol || "");
+  lsSet(PERSON_KEY, phoneOwner);
+  lsSet(ROL_KEY, miRol);
+  const antes = bars.map(b => b.nombre).join("|");
+  bars = yo.bares.map(n => ({ nombre: String(n), url: central.url }));
+  lsSet(BARS_KEY, JSON.stringify(bars));
+  sinBares = !bars.length;
+  if (!bars.some(b => b.nombre === curBarName)) {
+    curBarName = bars.length ? bars[0].nombre : "";
+    lsSet(CUR_BAR_KEY, curBarName);
+    loadLocalCache();
+    applyOutboxLocally();
+  }
+  return antes !== bars.map(b => b.nombre).join("|");
+}
+let sinBares = false;
+
+// Dirección para leer un bar (o, sin bar, para preguntar quién soy).
+function getUrl(bar, action) {
+  const base = central ? central.url : bar.url;
+  const sep = base.includes("?") ? "&" : "?";
+  let q = "action=" + action;
+  if (central) q += "&clave=" + encodeURIComponent(central.clave) + (bar ? "&bar=" + encodeURIComponent(bar.nombre) : "");
+  return base + sep + q;
+}
 
 // ============================================================
 // DATOS DEL BAR ACTUAL + COPIA LOCAL
@@ -539,12 +696,19 @@ let CANTS = [...DEFAULT_CANTS];
 let planillaUrl = "";
 // Días cuyo stock ya se cerró: [{ fecha, persona, cuando }].
 let cierres = [];
+// Pedidos (solo con la planilla central): un renglón por producto pedido.
+let pedidos = [];
+// Precio y proveedores de cada producto: { nombre: { costo, proveedores } }.
+let precios = {};
+// WhatsApp del dueño del bar, a quien le llegan los pedidos para aprobar.
+let whatsappDueno = "";
 
 function cacheKey(barName) { return KEY_PREFIX + "bar_" + slug(barName) + "_cache_v2"; }
 function syncKey(barName) { return KEY_PREFIX + "bar_" + slug(barName) + "_ultima_sync"; }
 
 function loadLocalCache() {
   conteos = []; productos = []; UNITS = [...DEFAULT_UNITS]; CANTS = [...DEFAULT_CANTS]; planillaUrl = ""; cierres = [];
+  pedidos = []; precios = {}; whatsappDueno = "";
   if (!curBarName) return;
   const c = lsJson(cacheKey(curBarName), null);
   if (!c) return;
@@ -554,11 +718,15 @@ function loadLocalCache() {
   if (Array.isArray(c.cantidades) && c.cantidades.length) CANTS = c.cantidades;
   if (typeof c.planilla === "string") planillaUrl = c.planilla;
   if (Array.isArray(c.cierres)) cierres = c.cierres;
+  if (Array.isArray(c.pedidos)) pedidos = c.pedidos;
+  if (c.precios && typeof c.precios === "object") precios = c.precios;
+  if (typeof c.whatsapp === "string") whatsappDueno = c.whatsapp;
 }
 
 function saveLocalCache() {
   if (!curBarName) return;
-  lsSet(cacheKey(curBarName), JSON.stringify({ conteos, productos, unidades: UNITS, cantidades: CANTS, planilla: planillaUrl, cierres }));
+  lsSet(cacheKey(curBarName), JSON.stringify({ conteos, productos, unidades: UNITS, cantidades: CANTS, planilla: planillaUrl, cierres,
+    pedidos, precios, whatsapp: whatsappDueno }));
 }
 
 // ============================================================
@@ -586,7 +754,7 @@ function queueChange(action, payload) {
 
 function sameProduct(a, b) {
   return a.nombre === b.nombre && a.categoria === b.categoria && a.grupo === b.grupo && (a.unidad || "") === (b.unidad || "") &&
-    (a.familia || "") === (b.familia || "") && (a.contenido || "") === (b.contenido || "");
+    (a.familia || "") === (b.familia || "") && (a.contenido || "") === (b.contenido || "") && (a.codigo || "") === (b.codigo || "");
 }
 function listaDe(data, nombre) { return nombre === "cantidades" ? (data.cantidades || []) : (data.unidades || []); }
 
@@ -607,6 +775,7 @@ function isApplied(op, data) {
     case "product_remove": return !data.productos.some(x => x.nombre === p.nombre);
     case "config_add": return listaDe(data, p.list).some(v => String(v) === String(p.value));
     case "config_remove": return !listaDe(data, p.list).some(v => String(v) === String(p.value));
+    case "pedido_add": return p.items.every(it => (data.pedidos || []).some(x => sameId(x.id, it.id)));
   }
   return false;
 }
@@ -650,6 +819,9 @@ function applyOp(op) {
       if (p.list === "cantidades") CANTS = CANTS.filter(v => v !== p.value);
       else UNITS = UNITS.filter(v => v !== p.value);
       break;
+    case "pedido_add":
+      p.items.forEach(it => { if (!pedidos.some(x => sameId(x.id, it.id))) pedidos = pedidos.concat([it]); });
+      break;
   }
 }
 
@@ -666,13 +838,17 @@ async function flushOutbox() {
   for (const op of outbox.slice()) {
     const bar = bars.find(b => b.nombre === op.bar);
     if (!bar || blocked.has(op.bar)) { blocked.add(op.bar); continue; }
-    let ok = false, drop = false;
+    let ok = false, drop = false, data = null;
     try {
-      const res = await fetch(bar.url, { method: "POST", body: JSON.stringify(Object.assign({ action: op.action }, op.payload)) });
-      const data = await res.json();
+      const body = Object.assign({ action: op.action }, op.payload);
+      if (central) { body.clave = central.clave; body.bar = op.bar; }
+      const res = await fetch(central ? central.url : bar.url, { method: "POST", body: JSON.stringify(body) });
+      data = await res.json();
       ok = !!(data && data.ok);
       // La planilla lo rechazó para siempre (por ejemplo, borrar sin permiso).
-      drop = !ok && !!(data && data.descartar);
+      // Si la clave no sirve, no se descarta nada: queda en el celular.
+      drop = !ok && !!(data && data.descartar) && data.error !== "clave";
+      if (data && data.error === "clave") syncProblem = "clave";
     } catch (e) {
       // Sin señal o respuesta ilegible: queda pendiente y se reintenta.
     }
@@ -680,7 +856,7 @@ async function flushOutbox() {
       outbox = outbox.filter(o => o.opId !== op.opId);
       saveOutbox();
       if (op.bar === curBarName) sentCurrent = true;
-      if (drop) showToast(op.action === "add" ? "No se guardó: el stock de ese día ya estaba cerrado" : "La planilla no aceptó un cambio");
+      if (drop) showToast(op.action === "add" && data && /cerrado/.test(data.error || "") ? "No se guardó: el stock de ese día ya estaba cerrado" : "La planilla no aceptó un cambio");
     } else {
       // Se frena este bar para no mandar sus cambios fuera de orden.
       blocked.add(op.bar);
@@ -695,16 +871,43 @@ let syncProblem = "";
 let fetchSeq = 0;
 
 // Lee todo el bar actual desde la planilla.
-async function fetchAllFromSheet() {
+async function fetchAllFromSheet(otraVez) {
+  // Con la planilla central y sin bares todavía: se pregunta quién es.
+  if (central && !curBar()) {
+    try {
+      const res = await fetch(getUrl(null, "whoami"));
+      const data = await res.json();
+      if (data && data.error === "clave") syncProblem = "clave";
+      else if (data && data.yo) { syncProblem = ""; aplicarYo(data.yo); }
+      else syncProblem = "script";
+    } catch (e) {
+      syncProblem = "red";
+    }
+    if (!curBar()) { renderEverything(); return; }
+  }
   const bar = curBar();
   if (!bar) { renderEverything(); return; }
   const seq = ++fetchSeq;
   const barName = bar.nombre;
   try {
-    const sep = bar.url.includes("?") ? "&" : "?";
-    const res = await fetch(bar.url + sep + "action=get_all");
+    const res = await fetch(getUrl(bar, "get_all"));
     const data = await res.json();
     if (seq !== fetchSeq || barName !== curBarName) return;
+    if (central && data && data.error === "clave") {
+      syncProblem = "clave";
+      renderEverything();
+      return;
+    }
+    // La planilla central dice quién es y qué bares ve. Si este bar ya no
+    // le toca, se pasa a otro (la copia local no se borra).
+    if (central && data && data.yo) {
+      const cambio = aplicarYo(data.yo);
+      if (data.error === "sin acceso" || barName !== curBarName) {
+        renderEverything();
+        if (cambio && !otraVez) fetchAllFromSheet(true);
+        return;
+      }
+    }
     // Una respuesta solo sirve si trae de verdad las listas. Si no, se
     // conserva lo que hay en el celular (nunca se vacía la app).
     if (!data || !Array.isArray(data.conteos) || !Array.isArray(data.productos)) {
@@ -725,6 +928,9 @@ async function fetchAllFromSheet() {
     if (Array.isArray(data.cantidades) && data.cantidades.length) CANTS = data.cantidades;
     if (typeof data.planilla === "string") planillaUrl = data.planilla;
     cierres = Array.isArray(data.cierres) ? data.cierres : [];
+    if (Array.isArray(data.pedidos)) pedidos = data.pedidos;
+    if (data.precios && typeof data.precios === "object") precios = data.precios;
+    if (typeof data.whatsapp === "string") whatsappDueno = data.whatsapp;
     applyOutboxLocally();
     saveLocalCache();
     syncProblem = "";
@@ -959,6 +1165,13 @@ function renderConfig() {
   document.getElementById("countProductos").textContent = productos.length;
   document.getElementById("countUnidades").textContent = UNITS.length;
   document.getElementById("countCantidades").textContent = CANTS.length;
+  // Aviso de productos sin precio (solo con la planilla central, para quien arma el catálogo).
+  const sinP = sinPrecio();
+  document.getElementById("cfgPrecios").style.display = central && can("config") ? "block" : "none";
+  document.getElementById("countSinPrecio").textContent = sinP.length;
+  document.getElementById("sinPrecioList").innerHTML = sinP.length
+    ? sinP.map(p => '<div class="cfg-row"><div><div class="n">' + esc(p.nombre) + '</div><div class="d">' + esc([p.categoria, famOf(p), p.codigo ? "Código " + p.codigo : ""].filter(Boolean).join(" · ")) + '</div></div></div>').join("")
+    : '<div class="help-text" style="margin:0;">Todos los productos tienen precio.</div>';
 
   let html = "";
   const fila = p => '<button class="cfg-row" data-prod="' + esc(p.nombre) + '"><div><div class="n">' + (esTop(p) ? "★ " : "") + esc(p.nombre) + '</div><div class="d">' +
@@ -999,7 +1212,7 @@ function renderConfig() {
   }));
 
   const info = [];
-  info.push(phoneOwner ? "Lo usa <strong>" + esc(phoneOwner) + "</strong>." : "Todavía no se eligió quién lo usa.");
+  info.push(phoneOwner ? "Lo usa <strong>" + esc(phoneOwner) + "</strong>" + (central && miRol ? " (" + esc(miRol.toLowerCase()) + ")" : "") + "." : "Todavía no se eligió quién lo usa.");
   if (bars.length) info.push("Bares en este celular: " + bars.map(b => esc(b.nombre)).join(", ") + ".");
   info.push("Para cambiar la persona o sumar un bar, abrí un link de instalación nuevo.");
   document.getElementById("phoneInfo").innerHTML = info.join("<br>");
@@ -1013,6 +1226,10 @@ function renderSyncState() {
   if (!curBar()) {
     cls = "alert";
     html = "<strong>Este celular no está conectado a la planilla</strong>Abrí el link de instalación que te pasaron.";
+  } else if (syncProblem === "clave") {
+    cls = "alert";
+    html = "<strong>Tu link ya no funciona</strong>Pedile a Ignacio un link de instalación nuevo. Lo cargado en este celular no se pierde" +
+      (n > 0 ? " (" + (uno ? "1 carga sin enviar" : n + " cargas sin enviar") + ")" : "") + ".";
   } else if (n > 0) {
     cls = "wait";
     html = "<strong>" + (uno ? "1 carga sin enviar" : n + " cargas sin enviar") + "</strong>" +
@@ -1040,9 +1257,20 @@ function renderSyncState() {
   } else last.style.display = "none";
 }
 
+function noAccessHtml() {
+  if (central && syncProblem === "clave") return "<strong>Tu link ya no funciona</strong>Pedile a Ignacio un link de instalación nuevo.";
+  if (central && sinBares) return "<strong>Tu usuario no tiene ningún bar asignado</strong>Avisale a Ignacio para que te sume en la planilla central.";
+  if (central) return "<strong>Conectando con la planilla…</strong>La primera vez hace falta señal. Si tarda, revisá la conexión y volvé a abrir la app.";
+  return "<strong>Este celular todavía no está conectado a ningún bar</strong>Abrí el link de instalación que te pasaron por WhatsApp y, desde esa página, agregá la app a la pantalla de inicio.";
+}
+
 function renderEverything() {
   const hasBar = !!curBar();
-  document.getElementById("noAccess").style.display = hasBar ? "none" : "block";
+  const na = document.getElementById("noAccess");
+  na.style.display = hasBar ? "none" : "block";
+  na.innerHTML = hasBar ? "" : noAccessHtml();
+  document.getElementById("tabPedidos").style.display = can("pedir") ? "flex" : "none";
+  if (!can("pedir") && document.getElementById("tab-pedidos").classList.contains("active")) showTab("inicio");
   document.getElementById("tabbar").style.display = hasBar ? "flex" : "none";
   document.querySelectorAll(".tab-panel").forEach(p => p.style.visibility = hasBar ? "visible" : "hidden");
   renderHeader();
@@ -1050,7 +1278,9 @@ function renderEverything() {
   if (!hasBar) return;
   renderInicio();
   renderHistorial();
+  renderPedidos();
   renderConfig();
+  if (document.getElementById("pedOverlay").classList.contains("open") && (pdStep === 1 || pdStep === 2)) renderPedWizard();
   // Si está abierta la carga, actualiza los ✓ (sin tocar lo que se está escribiendo).
   if (document.getElementById("cargaOverlay").classList.contains("open") && wStep !== 4) renderWizard();
 }
@@ -1274,7 +1504,7 @@ document.querySelectorAll("#cargaOverlay [data-close]").forEach(b => b.addEventL
 function wErr(msg) { const e = document.getElementById("wErr"); e.textContent = msg; e.style.display = "block"; }
 
 document.getElementById("wSave").addEventListener("click", () => {
-  if (!PEOPLE.includes(phoneOwner)) { wErr("Este celular no sabe quién lo usa. Abrí de nuevo tu link de instalación."); return; }
+  if (central ? !phoneOwner : !PEOPLE.includes(phoneOwner)) { wErr("Este celular no sabe quién lo usa. Abrí de nuevo tu link de instalación."); return; }
   if (isCerrado(wFecha)) { wErr("El stock de este día ya está cerrado: no se puede modificar."); return; }
   const items = [];
   let bad = "", borrado = "";
@@ -1360,6 +1590,8 @@ function openProduct(p) {
   if (p && p.unidad && !units.includes(p.unidad)) units.push(p.unidad);
   document.getElementById("pUnidad").innerHTML = units.map(u => '<option value="' + esc(u) + '">' + esc(u) + '</option>').join("");
   document.getElementById("pUnidad").value = p ? p.unidad : units[0];
+  document.getElementById("pCodigoField").style.display = central ? "block" : "none";
+  document.getElementById("pCodigo").value = p ? (p.codigo || "") : "";
   document.getElementById("pErr").style.display = "none";
   document.getElementById("pDelete").style.display = p ? "block" : "none";
   document.getElementById("prodOverlay").classList.add("open");
@@ -1376,6 +1608,8 @@ document.getElementById("pSave").addEventListener("click", () => {
   if (!familia) { err.textContent = fSel === "__nueva" ? "Escribí el nombre de la familia nueva." : "Elegí la familia del producto."; err.style.display = "block"; return; }
   const prod = { nombre: nombre, categoria: pCat, grupo: pGrupo, unidad: document.getElementById("pUnidad").value,
     familia: familia, contenido: document.getElementById("pCont").value };
+  // El Código Fudo solo existe con la planilla central (une el producto con su precio).
+  if (central) prod.codigo = document.getElementById("pCodigo").value.trim();
   closeOverlay("prodOverlay");
   queueChange("product_set", { producto: prod });
   showToast("Producto guardado");
@@ -1387,6 +1621,327 @@ document.getElementById("pDelete").addEventListener("click", () => {
   closeOverlay("prodOverlay");
   queueChange("product_remove", { nombre: p.nombre });
 });
+
+// ============================================================
+// PEDIDOS: fecha y Barra/Cocina → proveedores → productos → enviar
+// ============================================================
+// Un pedido puede llevar varios proveedores. Mientras se arma queda
+// guardado en el celular (borrador, uno por Barra y otro por Cocina);
+// al enviarlo se guarda en la hoja Pedidos del bar y se abre WhatsApp
+// con un solo mensaje para que el dueño lo apruebe.
+const SIN_PROV = "Sin proveedor";
+const SEP = "\u0001";
+let pdStep = 1, pdCat = "", pdProv = "";
+
+function borradorKey() { return KEY_PREFIX + "bar_" + slug(curBarName) + "_pedido_borrador"; }
+function borradores() { const b = lsJson(borradorKey(), {}); return b && typeof b === "object" ? b : {}; }
+function borrador(cat) {
+  const b = borradores()[cat];
+  return b && b.items && typeof b.items === "object" ? b : { fecha: todayStr(), items: {} };
+}
+function guardarBorrador(cat, b) {
+  const todos = borradores();
+  if (b && Object.keys(b.items).length) todos[cat] = b; else delete todos[cat];
+  lsSet(borradorKey(), JSON.stringify(todos));
+}
+
+function precioDe(nombre) {
+  const x = precios[nombre];
+  return x && typeof x.costo === "number" && x.costo > 0 ? x.costo : null;
+}
+function proveedoresDeProd(nombre) {
+  const x = precios[nombre];
+  const l = x && Array.isArray(x.proveedores) ? x.proveedores.filter(Boolean) : [];
+  return l.length ? l : [SIN_PROV];
+}
+// Productos del catálogo sin precio (para avisarle a quien arma el catálogo).
+function sinPrecio() { return productos.filter(p => precioDe(p.nombre) === null); }
+// Proveedores de una categoría, por orden alfabético ("Sin proveedor" al final).
+function proveedoresDe(cat) {
+  const l = [];
+  productosDe(cat).forEach(p => proveedoresDeProd(p.nombre).forEach(v => { if (!l.includes(v)) l.push(v); }));
+  return l.filter(v => v !== SIN_PROV).sort((a, b) => a.localeCompare(b, "es")).concat(l.includes(SIN_PROV) ? [SIN_PROV] : []);
+}
+function productosDeProv(cat, prov) { return productosDe(cat).filter(p => proveedoresDeProd(p.nombre).includes(prov)); }
+
+function fmtPesos(n) { return "$ " + Math.round(Number(n)).toLocaleString("es-AR"); }
+
+// Los renglones del borrador, en el orden de los proveedores y del catálogo.
+function lineasBorrador(cat) {
+  const b = borrador(cat);
+  const out = [];
+  const orden = proveedoresDe(cat);
+  Object.keys(b.items).forEach(k => { const v = k.split(SEP)[0]; if (!orden.includes(v)) orden.push(v); });
+  orden.forEach(prov => {
+    const nombres = productosDe(cat).map(p => p.nombre);
+    Object.keys(b.items).forEach(k => { const n = k.split(SEP)[1]; if (k.split(SEP)[0] === prov && !nombres.includes(n)) nombres.push(n); });
+    nombres.forEach(n => {
+      const q = b.items[prov + SEP + n];
+      if (!(q > 0)) return;
+      const p = prodByName(n);
+      const precio = precioDe(n);
+      out.push({ proveedor: prov, producto: n, cantidad: q, unidad: p ? p.unidad : "", precio: precio, subtotal: precio === null ? null : Math.round(q * precio * 100) / 100 });
+    });
+  });
+  return out;
+}
+function totalDe(lineas) {
+  return { total: lineas.reduce((t, l) => t + (l.subtotal || 0), 0), sinPrecio: lineas.filter(l => l.subtotal === null).length, n: lineas.length };
+}
+function totalHtml(lineas) {
+  const t = totalDe(lineas);
+  if (!t.n) return '<span>Todavía no hay nada en el pedido.</span>';
+  return '<span>' + (t.n === 1 ? "1 producto" : t.n + " productos") +
+    (t.sinPrecio ? '<small>' + (t.sinPrecio === 1 ? "1 sin precio, no suma" : t.sinPrecio + " sin precio, no suman") + '</small>' : "") +
+    '</span><strong>' + fmtPesos(t.total) + '</strong>';
+}
+
+function openPedido() {
+  pdCat = ""; pdProv = "";
+  document.getElementById("pdFecha").value = todayStr();
+  document.getElementById("pedOverlay").classList.add("open");
+  goPd(1);
+}
+function goPd(n) {
+  pdStep = n;
+  renderPedWizard();
+  document.querySelector("#pedOverlay .modal-sheet").scrollTop = 0;
+}
+
+function renderPedWizard() {
+  [1, 2, 3, 4].forEach(n => { document.getElementById("pdStep" + n).style.display = n === pdStep ? "block" : "none"; });
+  const b = pdCat ? borrador(pdCat) : null;
+  const crumb = [];
+  if (pdStep > 1) crumb.push("Pedido " + curBarName + " · " + pdCat + " · " + dayLabelLong(b.fecha));
+  if (pdStep === 3) crumb.push(pdProv);
+  document.getElementById("pdCrumb").textContent = crumb.join(" · ");
+  document.getElementById("pdTitle").textContent = pdStep === 1 ? "Hacer pedido" : pdStep === 2 ? "¿A qué proveedor?" : pdStep === 3 ? pdProv : "Revisar y enviar";
+
+  if (pdStep === 1) {
+    const c = document.getElementById("pdCats");
+    c.innerHTML = CATEGORIAS.map(cat => {
+      const n = Object.keys(borrador(cat).items).length;
+      const l = productosDe(cat).length;
+      return '<button class="choice ' + catCls(cat) + '" data-pdcat="' + esc(cat) + '"' + (l ? "" : " disabled") + '><span>' + esc(cat) +
+        '<small>' + (l ? proveedoresDe(cat).length + (proveedoresDe(cat).length === 1 ? " proveedor" : " proveedores") : "No hay productos") + '</small></span>' +
+        (n ? '<span class="pd-badge">' + (n === 1 ? "1 sin enviar" : n + " sin enviar") + '</span>' : "") + '</button>';
+    }).join("");
+    c.querySelectorAll("[data-pdcat]").forEach(x => x.addEventListener("click", () => {
+      const f = document.getElementById("pdFecha").value;
+      if (!f) { alert("Elegí la fecha."); return; }
+      pdCat = x.getAttribute("data-pdcat");
+      const bb = borrador(pdCat);
+      bb.fecha = f;
+      guardarBorrador(pdCat, bb);
+      goPd(2);
+    }));
+  }
+  if (pdStep === 2) {
+    const lineas = lineasBorrador(pdCat);
+    const provs = proveedoresDe(pdCat);
+    const c = document.getElementById("pdProvs");
+    c.innerHTML = provs.map(v => {
+      const l = productosDeProv(pdCat, v).length;
+      const mias = lineas.filter(x => x.proveedor === v);
+      const t = totalDe(mias);
+      return '<button class="choice prov ' + catCls(pdCat) + '" data-pdprov="' + esc(v) + '" data-name="' + esc(norm(v)) + '"><span>' + esc(v) +
+        '<small>' + l + (l === 1 ? " producto" : " productos") + '</small></span>' +
+        (mias.length ? '<span class="pd-badge">' + mias.length + ' · ' + fmtPesos(t.total) + '</span>' : "") + '</button>';
+    }).join("");
+    c.querySelectorAll("[data-pdprov]").forEach(x => x.addEventListener("click", () => { pdProv = x.getAttribute("data-pdprov"); openPdLista(); }));
+    const bp = document.getElementById("pdBuscarProv");
+    bp.style.display = provs.length > 8 ? "block" : "none";
+    filtrarProvs();
+    document.getElementById("pdTotal2").innerHTML = totalHtml(lineas);
+  }
+  if (pdStep === 4) renderPdResumen();
+}
+
+function filtrarProvs() {
+  const q = norm(document.getElementById("pdBuscarProv").value.trim());
+  document.querySelectorAll("#pdProvs [data-pdprov]").forEach(r => { r.style.display = !q || r.getAttribute("data-name").includes(q) ? "flex" : "none"; });
+}
+document.getElementById("pdBuscarProv").addEventListener("input", filtrarProvs);
+
+function pdRowHtml(p) {
+  const pr = precioDe(p.nombre);
+  const det = [unitLabel(p.unidad), p.contenido].filter(Boolean).map(esc);
+  det.push(pr === null ? '<span class="sp">sin precio</span>' : esc(fmtPesos(pr)) + " c/u");
+  return '<div class="q-row" data-name="' + esc(norm(p.nombre)) + '"><div class="q-name">' + esc(p.nombre) +
+    '<small>' + det.join(" · ") + '</small><span class="eq"></span></div>' +
+    '<input type="text" inputmode="decimal" autocomplete="off" data-item="' + esc(p.nombre) + '" placeholder="Cant."></div>';
+}
+
+function openPdLista() {
+  const lista = productosDeProv(pdCat, pdProv);
+  const b = borrador(pdCat);
+  const box = document.getElementById("pdLista");
+  box.innerHTML = lista.map(pdRowHtml).join("");
+  const buscar = document.getElementById("pdBuscar");
+  buscar.value = "";
+  buscar.style.display = lista.length > 12 ? "block" : "none";
+  box.querySelectorAll(".q-row").forEach(row => {
+    const inp = row.querySelector("input");
+    const nombre = inp.getAttribute("data-item");
+    const q = b.items[pdProv + SEP + nombre];
+    if (q > 0) inp.value = String(q).replace(".", ",");
+    inp.addEventListener("input", () => pdCambio(row));
+    pdMarcar(row);
+  });
+  document.getElementById("pdTotal3").innerHTML = totalHtml(lineasBorrador(pdCat));
+  goPd(3);
+}
+
+// Muestra el subtotal del renglón ("= $ 7.200").
+function pdMarcar(row) {
+  const inp = row.querySelector("input");
+  const q = parseQty(inp.value);
+  const pr = precioDe(inp.getAttribute("data-item"));
+  const ok = q !== null && !isNaN(q) && q > 0;
+  row.classList.toggle("filled", ok);
+  row.querySelector(".eq").textContent = ok && pr !== null ? "= " + fmtPesos(q * pr) : "";
+}
+
+// Cada número que se escribe queda en el borrador (no se pierde si se cierra la app).
+function pdCambio(row) {
+  const inp = row.querySelector("input");
+  const nombre = inp.getAttribute("data-item");
+  const q = parseQty(inp.value);
+  const b = borrador(pdCat);
+  const k = pdProv + SEP + nombre;
+  if (q !== null && !isNaN(q) && q > 0) b.items[k] = q; else delete b.items[k];
+  guardarBorrador(pdCat, b);
+  pdMarcar(row);
+  document.getElementById("pdTotal3").innerHTML = totalHtml(lineasBorrador(pdCat));
+}
+
+document.getElementById("pdBuscar").addEventListener("input", (e) => {
+  const q = norm(e.target.value.trim());
+  document.querySelectorAll("#pdLista .q-row").forEach(r => { r.style.display = !q || r.getAttribute("data-name").includes(q) ? "flex" : "none"; });
+});
+
+// Agrupa renglones por proveedor, en el orden en que vienen.
+function porProveedor(lineas) {
+  const g = [];
+  lineas.forEach(l => {
+    let x = g.find(y => y.proveedor === l.proveedor);
+    if (!x) { x = { proveedor: l.proveedor, lineas: [] }; g.push(x); }
+    x.lineas.push(l);
+  });
+  return g;
+}
+function lineaTexto(l) {
+  return fmtN(l.cantidad) + " " + unitLabel(l.unidad) + " " + l.producto;
+}
+function lineasHtml(lineas) {
+  return porProveedor(lineas).map(g => {
+    const t = totalDe(g.lineas);
+    return '<div class="pd-prov"><span>' + esc(g.proveedor) + '</span><span>' + (t.sinPrecio === t.n ? '<span class="sp">sin precio</span>' : fmtPesos(t.total)) + '</span></div>' +
+      g.lineas.map(l => '<div class="g-line"><span>' + esc(lineaTexto(l)) + '</span><span class="q">' +
+        (l.subtotal === null ? '<span class="sp">sin precio</span>' : fmtPesos(l.subtotal)) + '</span></div>').join("");
+  }).join("");
+}
+
+function renderPdResumen() {
+  const lineas = lineasBorrador(pdCat);
+  const t = totalDe(lineas);
+  document.getElementById("pdResumen").innerHTML = lineasHtml(lineas) +
+    '<div class="pd-total" style="margin:12px 0 0;">' + totalHtml(lineas) + '</div>' +
+    (whatsappDueno ? "" : '<div class="help-text" style="margin:10px 0 0;">Este bar todavía no tiene cargado el WhatsApp del dueño: al enviar vas a elegir a quién mandarlo.</div>');
+  document.getElementById("pdEnviar").disabled = !t.n;
+  document.getElementById("pdErr").style.display = "none";
+}
+
+// El mensaje de WhatsApp: un solo mensaje con todos los proveedores.
+function mensajePedido(items) {
+  const it = items[0];
+  const out = ["*Pedido " + curBarName + " · " + it.categoria + "*", "Fecha: " + dayLabelLong(it.fecha), "Lo arma: " + it.persona, ""];
+  porProveedor(items).forEach(g => {
+    const t = totalDe(g.lineas);
+    out.push("*" + g.proveedor + "*" + (t.total ? " (" + fmtPesos(t.total) + ")" : ""));
+    g.lineas.forEach(l => out.push("• " + lineaTexto(l) + " – " + (l.subtotal === null ? "sin precio" : fmtPesos(l.subtotal))));
+    out.push("");
+  });
+  const t = totalDe(items);
+  out.push("*Total: " + fmtPesos(t.total) + "*");
+  if (t.sinPrecio) out.push("(" + (t.sinPrecio === 1 ? "1 producto sin precio, no está" : t.sinPrecio + " productos sin precio, no están") + " en el total)");
+  if (it.nota) out.push("Nota: " + it.nota);
+  out.push("", "¿Lo aprobás?");
+  return out.join("\n");
+}
+
+function abrirWhatsApp(texto) {
+  const url = "https://wa.me/" + (whatsappDueno || "") + "?text=" + encodeURIComponent(texto);
+  const w = window.open(url, "_blank");
+  if (!w) location.href = url;
+}
+
+document.getElementById("pdEnviar").addEventListener("click", () => {
+  const err = document.getElementById("pdErr");
+  const lineas = lineasBorrador(pdCat);
+  if (!lineas.length) return;
+  if (!phoneOwner) { err.textContent = "Este celular no sabe quién lo usa. Abrí de nuevo tu link de instalación."; err.style.display = "block"; return; }
+  const b = borrador(pdCat);
+  const pedido = newId();
+  const cargado = nowStamp();
+  const nota = document.getElementById("pdNota").value.trim();
+  const items = lineas.map((l, i) => Object.assign({ id: pedido + "-" + i, pedido: pedido, fecha: b.fecha, categoria: pdCat }, l,
+    { persona: phoneOwner, nota: nota, cargado: cargado }));
+  // WhatsApp se abre primero (tiene que ser apenas se toca el botón).
+  abrirWhatsApp(mensajePedido(items));
+  guardarBorrador(pdCat, null);
+  document.getElementById("pdNota").value = "";
+  closeOverlay("pedOverlay");
+  showTab("pedidos");
+  queueChange("pedido_add", { items: items });
+  showToast("Pedido guardado ✓");
+});
+
+document.querySelectorAll("#pedOverlay [data-pdback]").forEach(x => x.addEventListener("click", () => goPd(Number(x.getAttribute("data-pdback")))));
+document.querySelectorAll("#pedOverlay [data-pdrevisar]").forEach(x => x.addEventListener("click", () => {
+  if (!lineasBorrador(pdCat).length) { showToast("Todavía no anotaste nada"); return; }
+  goPd(4);
+}));
+document.querySelectorAll("#pedOverlay [data-pdclose]").forEach(x => x.addEventListener("click", () => closeOverlay("pedOverlay")));
+document.getElementById("openPedido").addEventListener("click", openPedido);
+
+// Pedidos hechos: una tarjeta por pedido, el más nuevo primero.
+let pedidoLimit = 15;
+function pedidosAgrupados() {
+  const g = {};
+  pedidos.forEach(p => { const k = String(p.pedido || p.id); (g[k] = g[k] || []).push(p); });
+  return Object.keys(g).map(k => g[k]).sort((a, b) => String(b[0].cargado).localeCompare(String(a[0].cargado)));
+}
+function renderPedidos() {
+  const sinP = sinPrecio().length;
+  const aviso = document.getElementById("sinPrecioAviso");
+  aviso.style.display = central && can("config") && sinP && productos.length ? "block" : "none";
+  aviso.innerHTML = "<strong>" + (sinP === 1 ? "1 producto sin precio" : sinP + " productos sin precio") + "</strong> en " + esc(curBarName) +
+    ". En los pedidos dicen «sin precio» y no suman.<br><button id=\"verSinPrecio\">Ver cuáles</button>";
+  const vs = document.getElementById("verSinPrecio");
+  if (vs) vs.addEventListener("click", () => {
+    showTab("config");
+    const body = document.getElementById("bodySinPrecio");
+    if (!body.classList.contains("open")) document.querySelector('[data-target="bodySinPrecio"]').click();
+  });
+  const todos = pedidosAgrupados();
+  const c = document.getElementById("pedidoList");
+  if (!todos.length) c.innerHTML = '<div class="empty-state">Todavía no hay pedidos.</div>';
+  else c.innerHTML = todos.slice(0, pedidoLimit).map((items, i) => {
+    const it = items[0];
+    const t = totalDe(items);
+    const provs = porProveedor(items).length;
+    return '<details class="group"><summary><div class="g-left"><div class="g-title">Pedido del ' + esc(dayLabel(it.fecha)) + ' · ' + esc(it.categoria) + '</div>' +
+      '<div class="g-meta">' + (provs === 1 ? "1 proveedor" : provs + " proveedores") + ' · ' + esc(it.persona) + '</div></div>' +
+      '<span class="g-count">' + fmtPesos(t.total) + '</span></summary><div class="g-body">' + lineasHtml(items) +
+      (t.sinPrecio ? '<div class="g-extra">' + (t.sinPrecio === 1 ? "1 producto sin precio, no está" : t.sinPrecio + " productos sin precio, no están") + ' en el total.</div>' : "") +
+      (it.nota ? '<div class="g-extra">Nota: ' + esc(it.nota) + '</div>' : "") +
+      '<button class="btn-wa" data-reenviar="' + i + '">Reenviar por WhatsApp</button></div></details>';
+  }).join("");
+  c.querySelectorAll("[data-reenviar]").forEach(x => x.addEventListener("click", () => abrirWhatsApp(mensajePedido(todos[Number(x.getAttribute("data-reenviar"))]))));
+  document.getElementById("pedidoMore").style.display = todos.length > pedidoLimit ? "block" : "none";
+}
+document.getElementById("pedidoMore").addEventListener("click", () => { pedidoLimit += 15; renderPedidos(); });
 
 // ============================================================
 // CONFIG: unidades, sincronizar, copia
@@ -1412,7 +1967,7 @@ document.getElementById("newCant").addEventListener("keydown", (e) => { if (e.ke
 document.getElementById("newUnit").addEventListener("keydown", (e) => { if (e.key === "Enter") document.getElementById("addUnit").click(); });
 document.getElementById("syncNowBtn").addEventListener("click", () => { showToast("Actualizando…"); syncNow(); });
 document.getElementById("downloadBackup").addEventListener("click", () => {
-  const backup = { exportadoEl: new Date().toISOString(), bar: curBarName, conteos, productos, unidades: UNITS, cantidades: CANTS };
+  const backup = { exportadoEl: new Date().toISOString(), bar: curBarName, conteos, productos, unidades: UNITS, cantidades: CANTS, pedidos };
   saveFile(KEY_PREFIX.replace(/_+$/, "") + "-" + slug(curBarName) + "-backup-" + todayStr() + ".json", JSON.stringify(backup, null, 2), "application/json");
 });
 document.getElementById("openCarga").addEventListener("click", () => openCarga());
@@ -1434,7 +1989,7 @@ async function start() {
   loadLocalCache();
   applyOutboxLocally();
   renderEverything();
-  if (curBar() && !PEOPLE.includes(phoneOwner)) document.getElementById("whoOverlay").classList.add("open");
+  if (!central && curBar() && !PEOPLE.includes(phoneOwner)) document.getElementById("whoOverlay").classList.add("open");
   await syncNow();
   // Lee la planilla cada 5 minutos y reintenta los pendientes cada 30 segundos.
   setInterval(fetchAllFromSheet, 300000);

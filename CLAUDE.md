@@ -68,6 +68,33 @@ quiere armar.
   el celular ya tenía con otro nombre, se renombra (así pasó Hugo → Archie).
 - En el celular: caché `stockbares_bar_<bar>_cache_v2`, pendientes
   `stockbares_pendientes_v2` (la v1 quedó sin usar).
+- **Planilla central** (en preparación, octubre 2026): una planilla "Sistema
+  Bares" con el **único** Apps Script (`apps-script/Central.gs`) para todos
+  los bares (van a ser ~10, de distintos dueños; Noel es el contador de
+  todos). Hojas: **Bares** (Bar | Planilla | WhatsApp del dueño),
+  **Personas** (Persona | Rol Administrador/Encargado | Bares "Todos" o
+  nombres | Clave | Link) y **Precios** (el Excel de Fudo pegado tal cual;
+  columnas por título: Código, Producto/Nombre, Proveedor, Costo). Las
+  planillas de cada bar quedan solo con datos (el código las abre por ID).
+  Link: `…/stockbares/#central=<exec>&clave=<clave>`, lo arma el menú
+  "Stock bares → Armar links de instalación". La clave dice persona, rol y
+  bares; el encargado solo entra a su bar (lo controla el Apps Script). Los
+  links viejos (`vincular`) siguen andando; un link central encima de uno
+  viejo pasa los bares y los pendientes a la central. En el celular:
+  `stockbares_central`, `stockbares_rol`. `Code.gs` es el script viejo por
+  bar (Archie y Hugo lo tienen pegado hasta que se cambie).
+- **Pedidos** (solo con la planilla central; los hacen encargados y Noel):
+  fecha y Barra/Cocina → proveedor → productos del catálogo con precio de
+  costo (o "sin precio") y total que se va sumando → Revisar → "Enviar al
+  dueño" abre WhatsApp con **un solo mensaje** con todos los proveedores,
+  al número del dueño del bar (hoja Bares; sin número, se elige el
+  contacto). El dueño aprueba por WhatsApp; no hay estados ni recepción ni
+  pedido sugerido (más adelante). Se guarda en la hoja **Pedidos** del bar
+  (acción `pedido_add`). El borrador queda en el celular
+  (`stockbares_bar_<bar>_pedido_borrador`). Proveedor y precio salen de
+  Precios: por el "Código Fudo" del Catálogo (columna 7, opcional) o por el
+  nombre. Al Administrador se le avisa qué productos no tienen precio
+  (Pedidos y Config). Los números de WhatsApp van solo en la planilla.
 - La planilla de prueba es de la cuenta de Ignacio; la definitiva la tiene
   que crear Noel con su cuenta (el Apps Script funciona a nombre de quien lo
   implementa).
