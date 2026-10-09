@@ -112,6 +112,14 @@ quiere armar.
   (`stockbares_bar_<bar>_pedido_borrador`). Al Administrador se le avisa
   qué productos no tienen precio. Los números de WhatsApp van solo en la
   planilla.
+- **Otros bares (pendiente, después de Archie y Hugo):** en Cuccina sus
+  nombres no coinciden con el stock y no se van a corregir. Mismo código
+  central para todos; en la hoja Bares una columna "Pedidos con": "Stock"
+  (Archie, Hugo: se pide con los productos del catálogo) o "Compras" (se
+  pide con la lista que sale sola de "Compras <Bar>", nombres de Cuccina,
+  sin equivalencias ni "nuevos en las compras"). En esos bares: se pueden
+  agregar productos a mano a la lista de pedidos, y el pedido saltea
+  Barra/Cocina (fecha → proveedor → productos).
 - La planilla de prueba es de la cuenta de Ignacio; la definitiva la tiene
   que crear Noel con su cuenta (el Apps Script funciona a nombre de quien lo
   implementa).
