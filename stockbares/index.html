@@ -236,6 +236,12 @@
   .big-btn.pedido { background: var(--wine-dark); }
   .aviso { margin: 0 20px 16px; border-radius: var(--radius); padding: 12px 16px; font-size: 14px; line-height: 1.4; background: var(--gold-bg); color: var(--gold); border: 1px solid var(--gold); }
   .aviso button { margin-top: 8px; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--gold); background: var(--surface); color: var(--gold); font-weight: 700; font-size: 13px; }
+  .nuevo-row { background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; font-size: 14px; }
+  .nuevo-row .n { font-weight: 700; }
+  .nuevo-row .d { font-size: 12px; color: var(--ink-soft); margin-top: 2px; }
+  .nuevo-btns { display: flex; gap: 6px; margin-top: 8px; }
+  .nuevo-btns button { flex: 1; padding: 8px 4px; border-radius: 8px; border: 1px solid var(--wine); background: var(--surface); color: var(--wine-dark); font-weight: 700; font-size: 13px; }
+  .nuevo-btns button.no { border-color: var(--line); color: var(--ink-soft); }
   .noaccess strong { display: block; color: var(--ink); font-size: 18px; margin-bottom: 8px; }
 </style>
 </head>
@@ -288,12 +294,21 @@
           <button class="btn-main" id="newProduct">+ Nuevo producto</button>
         </div>
       </div>
+      <div class="accordion-item" id="cfgNuevos" style="display:none">
+        <button class="accordion-header" data-target="bodyNuevos">
+          <span>Nuevos en las compras</span><span class="accordion-meta" id="countNuevos">0</span>
+        </button>
+        <div class="accordion-body" id="bodyNuevos">
+          <div class="help-text">Aparecen en las compras de este bar (hoja «Compras <span id="nuevosBar"></span>» de la planilla central) y no están en el stock. Decí qué es cada uno: un producto nuevo, el mismo que otro del stock con otro nombre, o algo que no se cuenta (flete, gas…).</div>
+          <div class="cfg-list" id="nuevosList"></div>
+        </div>
+      </div>
       <div class="accordion-item" id="cfgPrecios" style="display:none">
         <button class="accordion-header" data-target="bodySinPrecio">
           <span>Productos sin precio</span><span class="accordion-meta" id="countSinPrecio">0</span>
         </button>
         <div class="accordion-body" id="bodySinPrecio">
-          <div class="help-text">Estos productos del catálogo de este bar no tienen precio. Completalos en la hoja Precios de la planilla central (Sistema Bares), con el mismo nombre o con el Código Fudo. Mientras tanto, en los pedidos dicen «sin precio».</div>
+          <div class="help-text">Estos productos del catálogo de este bar no tienen precio. El precio sale de la última compra en las hojas «Compras» de la planilla central (Sistema Bares), buscando el mismo nombre. Si en las compras figura con otro nombre, anotalo en la hoja Equivalencias. Mientras tanto, en los pedidos dicen «sin precio».</div>
           <div class="cfg-list" id="sinPrecioList"></div>
         </div>
       </div>
@@ -439,10 +454,6 @@
         <label>Contenido de cada una</label>
         <select id="pCont"></select>
       </div>
-      <div class="field" id="pCodigoField" style="display:none">
-        <label>Código Fudo (opcional)</label>
-        <input type="text" id="pCodigo" placeholder="Para buscar el precio">
-      </div>
       <div class="err-msg" id="pErr"></div>
       <button class="btn-outline" id="pDelete" style="border-color:var(--rust); color:var(--rust); display:none;">Eliminar producto</button>
       <div class="modal-actions">
@@ -506,6 +517,19 @@
           <button class="btn-cancel" data-pdback="2">‹ Seguir agregando</button>
           <button class="btn-save" id="pdEnviar">Enviar al dueño</button>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- "Es el mismo que…": elegir el producto del stock -->
+  <div class="modal-overlay" id="equivOverlay">
+    <div class="modal-sheet">
+      <h2 style="margin-bottom:6px;">¿Cuál es del stock?</h2>
+      <div class="crumb" id="eqCrumb"></div>
+      <input type="search" id="eqBuscar" placeholder="Buscar…" style="width:100%; padding:12px 13px; border-radius:10px; border:1px solid var(--line); font-size:16px; background:var(--bg); margin-bottom:10px; font-family:inherit;">
+      <div class="cfg-list" id="eqList"></div>
+      <div class="modal-actions">
+        <button class="btn-cancel" id="eqCancel">Cancelar</button>
       </div>
     </div>
   </div>
@@ -702,13 +726,15 @@ let pedidos = [];
 let precios = {};
 // WhatsApp del dueño del bar, a quien le llegan los pedidos para aprobar.
 let whatsappDueno = "";
+// Lo que aparece en las compras del bar y no está en el stock (solo administrador).
+let comprasNuevas = [];
 
 function cacheKey(barName) { return KEY_PREFIX + "bar_" + slug(barName) + "_cache_v2"; }
 function syncKey(barName) { return KEY_PREFIX + "bar_" + slug(barName) + "_ultima_sync"; }
 
 function loadLocalCache() {
   conteos = []; productos = []; UNITS = [...DEFAULT_UNITS]; CANTS = [...DEFAULT_CANTS]; planillaUrl = ""; cierres = [];
-  pedidos = []; precios = {}; whatsappDueno = "";
+  pedidos = []; precios = {}; whatsappDueno = ""; comprasNuevas = [];
   if (!curBarName) return;
   const c = lsJson(cacheKey(curBarName), null);
   if (!c) return;
@@ -721,12 +747,13 @@ function loadLocalCache() {
   if (Array.isArray(c.pedidos)) pedidos = c.pedidos;
   if (c.precios && typeof c.precios === "object") precios = c.precios;
   if (typeof c.whatsapp === "string") whatsappDueno = c.whatsapp;
+  if (Array.isArray(c.compras_nuevas)) comprasNuevas = c.compras_nuevas;
 }
 
 function saveLocalCache() {
   if (!curBarName) return;
   lsSet(cacheKey(curBarName), JSON.stringify({ conteos, productos, unidades: UNITS, cantidades: CANTS, planilla: planillaUrl, cierres,
-    pedidos, precios, whatsapp: whatsappDueno }));
+    pedidos, precios, whatsapp: whatsappDueno, compras_nuevas: comprasNuevas }));
 }
 
 // ============================================================
@@ -754,7 +781,7 @@ function queueChange(action, payload) {
 
 function sameProduct(a, b) {
   return a.nombre === b.nombre && a.categoria === b.categoria && a.grupo === b.grupo && (a.unidad || "") === (b.unidad || "") &&
-    (a.familia || "") === (b.familia || "") && (a.contenido || "") === (b.contenido || "") && (a.codigo || "") === (b.codigo || "");
+    (a.familia || "") === (b.familia || "") && (a.contenido || "") === (b.contenido || "");
 }
 function listaDe(data, nombre) { return nombre === "cantidades" ? (data.cantidades || []) : (data.unidades || []); }
 
@@ -776,6 +803,7 @@ function isApplied(op, data) {
     case "config_add": return listaDe(data, p.list).some(v => String(v) === String(p.value));
     case "config_remove": return !listaDe(data, p.list).some(v => String(v) === String(p.value));
     case "pedido_add": return p.items.every(it => (data.pedidos || []).some(x => sameId(x.id, it.id)));
+    case "equiv_set": return !(data.compras_nuevas || []).some(x => norm(x.nombre) === norm(p.compra));
   }
   return false;
 }
@@ -806,6 +834,7 @@ function applyOp(op) {
     case "product_set": {
       const i = productos.findIndex(x => x.nombre === p.producto.nombre);
       if (i >= 0) productos[i] = p.producto; else productos.push(p.producto);
+      comprasNuevas = comprasNuevas.filter(x => norm(x.nombre) !== norm(p.producto.nombre));
       break;
     }
     case "product_remove":
@@ -819,6 +848,9 @@ function applyOp(op) {
       if (p.list === "cantidades") CANTS = CANTS.filter(v => v !== p.value);
       else UNITS = UNITS.filter(v => v !== p.value);
       break;
+    case "equiv_set":
+      comprasNuevas = comprasNuevas.filter(x => norm(x.nombre) !== norm(p.compra));
+      break;
     case "pedido_add":
       p.items.forEach(it => { if (!pedidos.some(x => sameId(x.id, it.id))) pedidos = pedidos.concat([it]); });
       break;
@@ -829,10 +861,13 @@ function applyOutboxLocally() {
   outbox.filter(op => op.bar === curBarName).forEach(applyOp);
 }
 
-let flushing = false;
+let flushing = false, flushOtraVez = false;
 async function flushOutbox() {
-  if (flushing || outbox.length === 0) return;
+  // Si llega un cambio mientras se está mandando otro, se manda apenas termina.
+  if (flushing) { flushOtraVez = true; return; }
+  if (outbox.length === 0) return;
   flushing = true;
+  flushOtraVez = false;
   let sentCurrent = false;
   const blocked = new Set();
   for (const op of outbox.slice()) {
@@ -864,6 +899,7 @@ async function flushOutbox() {
   }
   flushing = false;
   renderSyncState();
+  if (flushOtraVez) { flushOtraVez = false; await flushOutbox(); return; }
   if (sentCurrent) fetchAllFromSheet();
 }
 
@@ -931,6 +967,7 @@ async function fetchAllFromSheet(otraVez) {
     if (Array.isArray(data.pedidos)) pedidos = data.pedidos;
     if (data.precios && typeof data.precios === "object") precios = data.precios;
     if (typeof data.whatsapp === "string") whatsappDueno = data.whatsapp;
+    comprasNuevas = Array.isArray(data.compras_nuevas) ? data.compras_nuevas : [];
     applyOutboxLocally();
     saveLocalCache();
     syncProblem = "";
@@ -1168,9 +1205,10 @@ function renderConfig() {
   // Aviso de productos sin precio (solo con la planilla central, para quien arma el catálogo).
   const sinP = sinPrecio();
   document.getElementById("cfgPrecios").style.display = central && can("config") ? "block" : "none";
+  renderNuevos();
   document.getElementById("countSinPrecio").textContent = sinP.length;
   document.getElementById("sinPrecioList").innerHTML = sinP.length
-    ? sinP.map(p => '<div class="cfg-row"><div><div class="n">' + esc(p.nombre) + '</div><div class="d">' + esc([p.categoria, famOf(p), p.codigo ? "Código " + p.codigo : ""].filter(Boolean).join(" · ")) + '</div></div></div>').join("")
+    ? sinP.map(p => '<div class="cfg-row"><div><div class="n">' + esc(p.nombre) + '</div><div class="d">' + esc([p.categoria, famOf(p)].join(" · ")) + '</div></div></div>').join("")
     : '<div class="help-text" style="margin:0;">Todos los productos tienen precio.</div>';
 
   let html = "";
@@ -1541,6 +1579,7 @@ document.getElementById("wSave").addEventListener("click", () => {
 // ============================================================
 // PRODUCTOS
 // ============================================================
+let desdeCompra = null;
 let editingProduct = null, pCat = "Barra", pGrupo = "Resto", pFamPedida = null;
 document.getElementById("pFamilia").addEventListener("change", (e) => {
   document.getElementById("pFamNueva").style.display = e.target.value === "__nueva" ? "block" : "none";
@@ -1573,6 +1612,7 @@ function renderProductToggles() {
 
 function openProduct(p) {
   editingProduct = p || null;
+  desdeCompra = null;
   document.getElementById("pTitle").textContent = p ? "Editar producto" : "Nuevo producto";
   const nombre = document.getElementById("pNombre");
   nombre.value = p ? p.nombre : "";
@@ -1590,8 +1630,6 @@ function openProduct(p) {
   if (p && p.unidad && !units.includes(p.unidad)) units.push(p.unidad);
   document.getElementById("pUnidad").innerHTML = units.map(u => '<option value="' + esc(u) + '">' + esc(u) + '</option>').join("");
   document.getElementById("pUnidad").value = p ? p.unidad : units[0];
-  document.getElementById("pCodigoField").style.display = central ? "block" : "none";
-  document.getElementById("pCodigo").value = p ? (p.codigo || "") : "";
   document.getElementById("pErr").style.display = "none";
   document.getElementById("pDelete").style.display = p ? "block" : "none";
   document.getElementById("prodOverlay").classList.add("open");
@@ -1608,10 +1646,11 @@ document.getElementById("pSave").addEventListener("click", () => {
   if (!familia) { err.textContent = fSel === "__nueva" ? "Escribí el nombre de la familia nueva." : "Elegí la familia del producto."; err.style.display = "block"; return; }
   const prod = { nombre: nombre, categoria: pCat, grupo: pGrupo, unidad: document.getElementById("pUnidad").value,
     familia: familia, contenido: document.getElementById("pCont").value };
-  // El Código Fudo solo existe con la planilla central (une el producto con su precio).
-  if (central) prod.codigo = document.getElementById("pCodigo").value.trim();
   closeOverlay("prodOverlay");
   queueChange("product_set", { producto: prod });
+  // Si vino de las compras con otro nombre, se anota la equivalencia.
+  if (desdeCompra && norm(desdeCompra) !== norm(nombre)) queueChange("equiv_set", { compra: desdeCompra, producto: nombre });
+  desdeCompra = null;
   showToast("Producto guardado");
 });
 document.getElementById("pDelete").addEventListener("click", () => {
@@ -1645,9 +1684,12 @@ function guardarBorrador(cat, b) {
   lsSet(borradorKey(), JSON.stringify(todos));
 }
 
-function precioDe(nombre) {
+// El costo de la última compra; con proveedor, el de la última compra a ese proveedor.
+function precioDe(nombre, prov) {
   const x = precios[nombre];
-  return x && typeof x.costo === "number" && x.costo > 0 ? x.costo : null;
+  if (!x) return null;
+  const v = prov && x.porProveedor && typeof x.porProveedor[prov] === "number" ? x.porProveedor[prov] : x.costo;
+  return typeof v === "number" && v > 0 ? v : null;
 }
 function proveedoresDeProd(nombre) {
   const x = precios[nombre];
@@ -1679,7 +1721,7 @@ function lineasBorrador(cat) {
       const q = b.items[prov + SEP + n];
       if (!(q > 0)) return;
       const p = prodByName(n);
-      const precio = precioDe(n);
+      const precio = precioDe(n, prov);
       out.push({ proveedor: prov, producto: n, cantidad: q, unidad: p ? p.unidad : "", precio: precio, subtotal: precio === null ? null : Math.round(q * precio * 100) / 100 });
     });
   });
@@ -1764,7 +1806,7 @@ function filtrarProvs() {
 document.getElementById("pdBuscarProv").addEventListener("input", filtrarProvs);
 
 function pdRowHtml(p) {
-  const pr = precioDe(p.nombre);
+  const pr = precioDe(p.nombre, pdProv);
   const det = [unitLabel(p.unidad), p.contenido].filter(Boolean).map(esc);
   det.push(pr === null ? '<span class="sp">sin precio</span>' : esc(fmtPesos(pr)) + " c/u");
   return '<div class="q-row" data-name="' + esc(norm(p.nombre)) + '"><div class="q-name">' + esc(p.nombre) +
@@ -1796,7 +1838,7 @@ function openPdLista() {
 function pdMarcar(row) {
   const inp = row.querySelector("input");
   const q = parseQty(inp.value);
-  const pr = precioDe(inp.getAttribute("data-item"));
+  const pr = precioDe(inp.getAttribute("data-item"), pdProv);
   const ok = q !== null && !isNaN(q) && q > 0;
   row.classList.toggle("filled", ok);
   row.querySelector(".eq").textContent = ok && pr !== null ? "= " + fmtPesos(q * pr) : "";
@@ -1913,17 +1955,21 @@ function pedidosAgrupados() {
   return Object.keys(g).map(k => g[k]).sort((a, b) => String(b[0].cargado).localeCompare(String(a[0].cargado)));
 }
 function renderPedidos() {
-  const sinP = sinPrecio().length;
+  const sinP = productos.length ? sinPrecio().length : 0;
+  const nue = comprasNuevas.length;
   const aviso = document.getElementById("sinPrecioAviso");
-  aviso.style.display = central && can("config") && sinP && productos.length ? "block" : "none";
-  aviso.innerHTML = "<strong>" + (sinP === 1 ? "1 producto sin precio" : sinP + " productos sin precio") + "</strong> en " + esc(curBarName) +
-    ". En los pedidos dicen «sin precio» y no suman.<br><button id=\"verSinPrecio\">Ver cuáles</button>";
-  const vs = document.getElementById("verSinPrecio");
-  if (vs) vs.addEventListener("click", () => {
+  const avisos = [];
+  if (nue) avisos.push("<strong>" + (nue === 1 ? "1 producto nuevo" : nue + " productos nuevos") + " en las compras</strong> de " + esc(curBarName) +
+    " que no " + (nue === 1 ? "está" : "están") + " en el stock.<br><button data-ver=\"bodyNuevos\">Revisar</button>");
+  if (sinP) avisos.push("<strong>" + (sinP === 1 ? "1 producto sin precio" : sinP + " productos sin precio") + "</strong> en " + esc(curBarName) +
+    ". En los pedidos dicen «sin precio» y no suman.<br><button data-ver=\"bodySinPrecio\" id=\"verSinPrecio\">Ver cuáles</button>");
+  aviso.style.display = central && can("config") && avisos.length ? "block" : "none";
+  aviso.innerHTML = avisos.join('<div style="height:12px"></div>');
+  aviso.querySelectorAll("[data-ver]").forEach(x => x.addEventListener("click", () => {
+    const id = x.getAttribute("data-ver");
     showTab("config");
-    const body = document.getElementById("bodySinPrecio");
-    if (!body.classList.contains("open")) document.querySelector('[data-target="bodySinPrecio"]').click();
-  });
+    if (!document.getElementById(id).classList.contains("open")) document.querySelector('[data-target="' + id + '"]').click();
+  }));
   const todos = pedidosAgrupados();
   const c = document.getElementById("pedidoList");
   if (!todos.length) c.innerHTML = '<div class="empty-state">Todavía no hay pedidos.</div>';
@@ -1942,6 +1988,60 @@ function renderPedidos() {
   document.getElementById("pedidoMore").style.display = todos.length > pedidoLimit ? "block" : "none";
 }
 document.getElementById("pedidoMore").addEventListener("click", () => { pedidoLimit += 15; renderPedidos(); });
+
+// ============================================================
+// NUEVOS EN LAS COMPRAS (solo administrador, con la planilla central)
+// ============================================================
+// Lo que aparece en la hoja "Compras <bar>" y no está en el stock. Para
+// cada uno: es un producto nuevo (se carga con el formulario de siempre),
+// es el mismo que otro del stock con otro nombre, o no es stock.
+function renderNuevos() {
+  const ver = central && can("config");
+  document.getElementById("cfgNuevos").style.display = ver && comprasNuevas.length ? "block" : "none";
+  if (!ver) return;
+  document.getElementById("countNuevos").textContent = comprasNuevas.length;
+  document.getElementById("nuevosBar").textContent = curBarName;
+  const l = document.getElementById("nuevosList");
+  l.innerHTML = comprasNuevas.map((x, i) => '<div class="nuevo-row"><div class="n">' + esc(x.nombre) + '</div><div class="d">' +
+    esc([x.proveedor, typeof x.costo === "number" ? fmtPesos(x.costo) : ""].filter(Boolean).join(" · ")) + '</div>' +
+    '<div class="nuevo-btns"><button data-nuevo="' + i + '">Es nuevo</button><button data-igual="' + i + '">Es el mismo que…</button>' +
+    '<button class="no" data-nostock="' + i + '">No es stock</button></div></div>').join("");
+  l.querySelectorAll("[data-nuevo]").forEach(b => b.addEventListener("click", () => {
+    const x = comprasNuevas[Number(b.getAttribute("data-nuevo"))];
+    openProduct(null);
+    document.getElementById("pNombre").value = x.nombre;
+    desdeCompra = x.nombre;
+  }));
+  l.querySelectorAll("[data-igual]").forEach(b => b.addEventListener("click", () => openEquiv(comprasNuevas[Number(b.getAttribute("data-igual"))].nombre)));
+  l.querySelectorAll("[data-nostock]").forEach(b => b.addEventListener("click", () => {
+    const x = comprasNuevas[Number(b.getAttribute("data-nostock"))];
+    if (!confirm("¿«" + x.nombre + "» no se cuenta en el stock?\n\nNo te lo vuelve a preguntar. Si te equivocás, se corrige en la hoja Equivalencias de la planilla central.")) return;
+    queueChange("equiv_set", { compra: x.nombre, producto: "No es stock" });
+    showToast("Listo");
+  }));
+}
+
+let eqCompra = "";
+function openEquiv(compra) {
+  eqCompra = compra;
+  document.getElementById("eqCrumb").textContent = "En las compras figura como «" + compra + "».";
+  document.getElementById("eqBuscar").value = "";
+  const l = document.getElementById("eqList");
+  l.innerHTML = productos.map(p => '<button class="cfg-row" data-eq="' + esc(p.nombre) + '" data-name="' + esc(norm(p.nombre)) + '"><div><div class="n">' + esc(p.nombre) +
+    '</div><div class="d">' + esc([p.categoria, famOf(p), p.contenido].filter(Boolean).join(" · ")) + '</div></div><span>›</span></button>').join("");
+  l.querySelectorAll("[data-eq]").forEach(b => b.addEventListener("click", () => {
+    const prod = b.getAttribute("data-eq");
+    closeOverlay("equivOverlay");
+    queueChange("equiv_set", { compra: eqCompra, producto: prod });
+    showToast("«" + eqCompra + "» = «" + prod + "»");
+  }));
+  document.getElementById("equivOverlay").classList.add("open");
+}
+document.getElementById("eqBuscar").addEventListener("input", (e) => {
+  const q = norm(e.target.value.trim());
+  document.querySelectorAll("#eqList [data-eq]").forEach(r => { r.style.display = !q || r.getAttribute("data-name").includes(q) ? "flex" : "none"; });
+});
+document.getElementById("eqCancel").addEventListener("click", () => closeOverlay("equivOverlay"));
 
 // ============================================================
 // CONFIG: unidades, sincronizar, copia

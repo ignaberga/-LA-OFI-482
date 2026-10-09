@@ -41,7 +41,8 @@ propia dirección:
   proveedores con los productos del catálogo; la app muestra el precio de
   costo y el total, y lo manda por WhatsApp al dueño del bar para que lo
   apruebe. Necesita la **planilla central** (un solo código para todos los
-  bares, con las hojas Bares, Personas y Precios), en
+  bares, con las hojas Bares, Personas, Compras y Equivalencias; los
+  precios salen de las compras de Cuccina de todos los bares), en
   [`stockbares/apps-script/Central.gs`](stockbares/apps-script/Central.gs).
 - La versión anterior (con compras, ventas y control de faltantes) está en
   [`archivo/`](archivo/).

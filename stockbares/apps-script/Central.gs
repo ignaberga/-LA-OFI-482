@@ -14,15 +14,18 @@
 //     Encargado) | Bares ("Todos" o el nombre del bar; varios separados
 //     por coma) | Clave | Link de instalacion. La Clave y el Link los arma
 //     el menu "Stock bares > Armar links de instalacion".
-//   - "Precios": se pega el Excel exportado de Fudo, tal cual, con los
-//     titulos en la fila 1. Se usan las columnas cuyo titulo diga Codigo,
-//     Producto (o Nombre), Proveedor y Costo. Los precios valen para todos
-//     los bares.
+//   - "Compras <Bar>" (una por bar, ej. "Compras Archie"): se pega el
+//     detalle de compras de Cuccina de ese bar, tal cual sale. Se usan las
+//     columnas Fecha Documento, Razon Social (proveedor), Descripcion y
+//     Precio Unitario (columna H). De cada producto vale la ultima compra,
+//     de cualquier bar (los proveedores son los mismos). Lo bonificado al
+//     100 % y las notas de credito no cuentan como precio.
+//   - "Equivalencias": Nombre en compras | Producto del stock. Para cuando
+//     Cuccina lo llama distinto que el stock (el nombre que vale es el del
+//     stock). "No es stock" = no preguntar mas por ese (flete, etc.).
 //
 // En la planilla de cada bar este codigo usa (y crea si faltan): Conteos,
-// Catalogo, Resumen, Config, Cierres y Pedidos. En Catalogo, la columna
-// "Codigo Fudo" (opcional) une cada producto con su precio; si esta
-// vacia, se busca por el nombre exacto.
+// Catalogo, Resumen, Config, Cierres y Pedidos.
 //
 // Seguridad: cada persona entra con su Clave (va dentro de su link). Un
 // encargado solo puede leer y escribir el bar que tiene en "Bares", y solo
@@ -58,13 +61,15 @@ const ROL_ENCARGADO = "Encargado";
 // Que puede hacer cada rol (acciones que manda la app).
 const ACCIONES_ROL = {
   "Administrador": ["add", "cerrar", "reabrir", "delete_dia", "delete_carga", "replace_carga", "product_set",
-    "product_remove", "config_add", "config_remove", "pedido_add"],
+    "product_remove", "config_add", "config_remove", "pedido_add", "equiv_set"],
   "Encargado": ["add", "cerrar", "pedido_add"]
 };
 
 const SHEET_BARES = "Bares";
 const SHEET_PERSONAS = "Personas";
-const SHEET_PRECIOS = "Precios";
+const SHEET_EQUIV = "Equivalencias";
+const EQUIV_HEADERS = ["Nombre en compras", "Producto del stock"];
+const NO_ES_STOCK = "No es stock";
 const BARES_HEADERS = ["Bar", "Planilla", "WhatsApp del dueño"];
 const PERSONAS_HEADERS = ["Persona", "Rol", "Bares", "Clave", "Link de instalación"];
 
@@ -76,7 +81,7 @@ const SHEET_CIERRES = "Cierres";
 const SHEET_PEDIDOS = "Pedidos";
 
 const CONTEO_HEADERS = ["ID","Fecha","Categoría","Grupo","Producto","Cantidad","Unidad","Persona","Nota","Cargado","Carga"];
-const CATALOGO_HEADERS = ["Producto","Categoría","Grupo","Unidad","Familia","Contenido","Código Fudo"];
+const CATALOGO_HEADERS = ["Producto","Categoría","Grupo","Unidad","Familia","Contenido"];
 const CONFIG_HEADERS = ["Tipo","Valor"];
 const CIERRES_HEADERS = ["Fecha","Cerrado por","Cuándo"];
 const PEDIDO_HEADERS = ["ID","Fecha","Pedido","Categoría","Proveedor","Producto","Cantidad","Unidad","Precio","Subtotal","Persona","Nota","Cargado"];
@@ -167,52 +172,124 @@ function precio_(v) {
   return isNaN(n) ? null : n;
 }
 
-// Lee la hoja Precios (el Excel de Fudo pegado tal cual).
-function leerPrecios_() {
-  const sh = central_().getSheetByName(SHEET_PRECIOS);
-  if (!sh || sh.getLastRow() <= 1) return [];
-  const data = sh.getDataRange().getValues();
-  const t = data[0].map(norm_);
-  const col = function (re) { for (let i = 0; i < t.length; i++) if (re.test(t[i])) return i; return -1; };
-  const cCod = col(/^cod/), cProv = col(/proveedor/);
-  let cNom = col(/^(producto|nombre|articulo|descripcion)/);
-  if (cNom < 0) cNom = col(/producto|nombre|articulo|descripcion/);
-  let cCosto = col(/costo/);
-  if (cCosto < 0) cCosto = col(/precio/);
-  return data.slice(1).map(function (r) {
-    return {
-      codigo: cCod >= 0 ? String(r[cCod]).trim() : "",
-      nombre: cNom >= 0 ? String(r[cNom]).trim() : "",
-      proveedor: cProv >= 0 ? String(r[cProv]).trim() : "",
-      costo: cCosto >= 0 ? precio_(r[cCosto]) : null
-    };
-  }).filter(function (p) { return p.codigo || p.nombre; });
+// "02/09/2026", una fecha de la planilla o un numero → milisegundos.
+function fechaMs_(v) {
+  if (isDate_(v)) return v.getTime();
+  const m = String(v || "").match(/(\d{1,2})\/(\d{1,2})\/(\d{2,4})/);
+  if (m) return new Date(Number(m[3].length === 2 ? "20" + m[3] : m[3]), Number(m[2]) - 1, Number(m[1])).getTime();
+  const t = new Date(String(v || "")).getTime();
+  return isNaN(t) ? 0 : t;
 }
 
-// Para cada producto del catalogo del bar: su costo y sus proveedores.
+// Hojas "Compras ..." de la planilla central.
+function hojasCompras_() {
+  return central_().getSheets().filter(function (sh) { return /^compras\b/i.test(sh.getName()); });
+}
+
+// Lee una hoja de compras de Cuccina pegada tal cual. Puede tener los
+// titulos repetidos (si se pegaron varios reportes uno debajo del otro).
+function leerCompras_(sh) {
+  const data = sh.getDataRange().getValues();
+  const out = [];
+  let c = null;
+  for (let i = 0; i < data.length; i++) {
+    const r = data[i];
+    const t = r.map(norm_);
+    if (t.some(function (x) { return /^descripcion$|^producto$|^nombre$|^articulo$/.test(x); })) {
+      const col = function (re) { for (let j = 0; j < t.length; j++) if (re.test(t[j])) return j; return -1; };
+      c = {
+        fecha: col(/^fecha doc/) >= 0 ? col(/^fecha doc/) : col(/^fecha/),
+        prov: col(/razon social|proveedor/),
+        nom: col(/^descripcion|^producto|^nombre|^articulo/),
+        precio: col(/precio unitario/) >= 0 ? col(/precio unitario/) : col(/costo/) >= 0 ? col(/costo/) : col(/precio/) >= 0 ? col(/precio/) : 7,
+        desc: col(/^descuento item/) >= 0 ? col(/^descuento item/) : col(/^descuento$/),
+        tipo: col(/^tipo/)
+      };
+      continue;
+    }
+    if (!c) continue;
+    const nombre = String(r[c.nom] === undefined ? "" : r[c.nom]).trim();
+    if (!nombre) continue;
+    if (c.desc >= 0 && num_(r[c.desc]) >= 100) continue;
+    if (c.tipo >= 0 && /^n\.? ?c\b|credito/i.test(norm_(r[c.tipo]))) continue;
+    const costo = precio_(r[c.precio]);
+    if (!(costo > 0)) continue;
+    out.push({
+      nombre: nombre,
+      proveedor: c.prov >= 0 ? String(r[c.prov]).trim() : "",
+      costo: costo,
+      fecha: c.fecha >= 0 ? fechaMs_(r[c.fecha]) : 0
+    });
+  }
+  return out;
+}
+
+// Todas las compras de todos los bares, de la mas vieja a la mas nueva.
+function todasLasCompras_() {
+  let lista = [];
+  hojasCompras_().forEach(function (sh) { lista = lista.concat(leerCompras_(sh)); });
+  lista.forEach(function (x, i) { x.orden = i; });
+  return lista.sort(function (a, b) { return a.fecha - b.fecha || a.orden - b.orden; });
+}
+
+// { nombre en compras (normalizado): producto del stock o "No es stock" }
+function leerEquivalencias_() {
+  const out = {};
+  filasCentral_(SHEET_EQUIV).forEach(function (r) {
+    const k = norm_(r[0]), v = String(r[1] || "").trim();
+    if (k && v) out[k] = norm_(v) === norm_(NO_ES_STOCK) ? NO_ES_STOCK : v;
+  });
+  return out;
+}
+
+// Para cada producto del catalogo del bar: el costo de la ultima compra,
+// sus proveedores (el mas reciente primero) y el ultimo costo de cada uno.
 function preciosDelCatalogo_(catalogo) {
-  const lista = leerPrecios_();
-  const porCod = {}, porNom = {};
-  lista.forEach(function (p) {
-    if (p.codigo) (porCod[p.codigo] = porCod[p.codigo] || []).push(p);
-    if (p.nombre) (porNom[norm_(p.nombre)] = porNom[norm_(p.nombre)] || []).push(p);
+  const eq = leerEquivalencias_();
+  const porNom = {};
+  todasLasCompras_().forEach(function (c) {
+    const k = norm_(c.nombre);
+    if (eq[k] === NO_ES_STOCK) return;
+    const keys = [k];
+    if (eq[k] && keys.indexOf(norm_(eq[k])) < 0) keys.push(norm_(eq[k]));
+    keys.forEach(function (x) { (porNom[x] = porNom[x] || []).push(c); });
   });
   const out = {};
   catalogo.forEach(function (prod) {
-    const hits = (prod.codigo && porCod[prod.codigo]) || porNom[norm_(prod.nombre)] || [];
-    const costos = hits.map(function (h) { return h.costo; }).filter(function (c) { return c !== null; });
-    const provs = [];
-    hits.forEach(function (h) { if (h.proveedor && provs.indexOf(h.proveedor) < 0) provs.push(h.proveedor); });
-    out[prod.nombre] = { costo: costos.length ? costos[0] : null, proveedores: provs };
+    const hits = (porNom[norm_(prod.nombre)] || []).slice().reverse();
+    const porProveedor = {}, provs = [];
+    hits.forEach(function (h) {
+      const v = h.proveedor || "Sin proveedor";
+      if (provs.indexOf(v) < 0) { provs.push(v); porProveedor[v] = h.costo; }
+    });
+    out[prod.nombre] = { costo: hits.length ? hits[0].costo : null, proveedores: provs, porProveedor: porProveedor };
   });
   return out;
+}
+
+// Lo que aparece en las compras de este bar y no esta en su catalogo ni
+// en Equivalencias: para que el administrador diga que es.
+function comprasNuevas_(barNombre, catalogo) {
+  const eq = leerEquivalencias_();
+  const enCatalogo = {};
+  catalogo.forEach(function (p) { enCatalogo[norm_(p.nombre)] = true; });
+  const sh = hojasCompras_().filter(function (h) { return norm_(h.getName()) === norm_("Compras " + barNombre); })[0];
+  if (!sh) return [];
+  const ult = {};
+  leerCompras_(sh).forEach(function (c) {
+    const k = norm_(c.nombre);
+    if (enCatalogo[k] || eq[k]) return;
+    if (!ult[k] || c.fecha >= ult[k].fecha) ult[k] = c;
+  });
+  return Object.keys(ult).map(function (k) { return { nombre: ult[k].nombre, proveedor: ult[k].proveedor, costo: ult[k].costo }; })
+    .sort(function (a, b) { return a.nombre.localeCompare(b.nombre); });
 }
 
 // Menu en la planilla central.
 function onOpen() {
   hojaCentral_(SHEET_BARES, BARES_HEADERS);
   hojaCentral_(SHEET_PERSONAS, PERSONAS_HEADERS);
-  hojaCentral_(SHEET_PRECIOS, null);
+  hojaCentral_(SHEET_EQUIV, EQUIV_HEADERS);
   SpreadsheetApp.getUi().createMenu("Stock bares")
     .addItem("Armar links de instalación", "armarLinks")
     .addToUi();
@@ -295,8 +372,7 @@ function readCatalogo_() {
       grupo: /^top\s*10$/i.test(txt(r[2])) ? "Top 10" : "Resto",
       unidad: txt(r[3]),
       familia: txt(r[4]),
-      contenido: txt(r[5]),
-      codigo: txt(r[6])
+      contenido: txt(r[5])
     };
   });
 }
@@ -519,6 +595,7 @@ function doGet(e) {
       pedidos: readPedidos_(),
       precios: preciosDelCatalogo_(catalogo),
       whatsapp: bar.whatsapp,
+      compras_nuevas: yo.rol === ROL_ADMIN ? comprasNuevas_(bar.nombre, catalogo) : [],
       planilla: yo.rol === ROL_ADMIN ? ss_().getUrl() : ""
     });
   }
@@ -579,6 +656,18 @@ function doPost(e) {
         .map(function (p) { p.persona = persona; return pedidoToRow_(p); });
       if (nuevas.length) sh.getRange(sh.getLastRow() + 1, 1, nuevas.length, PEDIDO_HEADERS.length).setValues(nuevas);
 
+    } else if (action === "equiv_set") {
+      // "Este nombre de las compras es tal producto del stock" (o "No es stock").
+      const compra = String(body.compra || "").trim(), producto = String(body.producto || "").trim();
+      if (compra && producto) {
+        const sh = hojaCentral_(SHEET_EQUIV, EQUIV_HEADERS);
+        const data = sh.getDataRange().getValues();
+        let found = -1;
+        for (let i = 1; i < data.length; i++) if (norm_(data[i][0]) === norm_(compra)) { found = i + 1; break; }
+        if (found > 0) sh.getRange(found, 1, 1, 2).setValues([[compra, producto]]);
+        else sh.appendRow([compra, producto]);
+      }
+
     } else if (action === "delete_carga") {
       deleteRowsWhere_(getSheet_(SHEET_CONTEOS, CONTEO_HEADERS), 10, body.carga);
       rebuildResumen_();
@@ -613,7 +702,7 @@ function doPost(e) {
       ensureCatalogoHeaders_();
       const sh = getSheet_(SHEET_CATALOGO, CATALOGO_HEADERS);
       const row = [p.nombre, p.categoria || "Barra", p.grupo === "Top 10" ? "Top 10" : "Resto", p.unidad || "",
-        p.familia || "", p.contenido || "", p.codigo || ""];
+        p.familia || "", p.contenido || ""];
       const data = sh.getDataRange().getValues();
       let found = -1;
       for (let i = 1; i < data.length; i++) {
