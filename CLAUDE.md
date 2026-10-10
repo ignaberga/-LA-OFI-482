@@ -110,6 +110,24 @@ quiere armar.
   (Pedidos y Config) con tres opciones: Es nuevo (formulario de producto
   con el nombre; si se cambia el nombre se anota la equivalencia), Es el
   mismo que… (acción `equiv_set`) o No es stock.
+- **Bares de Felicidad SRL e Industrias SRL** (comparten Cuccina):
+  Brunchería, Capitán, Apartamento y Billy Beer (después Dada Güemes,
+  Vinatería…). Sus catálogos salieron de "INVENTARIOS_FELICIDAD.xlsx"
+  (solo bebidas e insumos de barra, familias = secciones del inventario,
+  columna 7 "Código Cuccina" solo de referencia). Precios: hoja "Compras
+  Felicidad e Industrias" = la hoja "COMPRAS…" de ese Excel (resumen sin
+  fechas; proveedor en GRUPO2, solo en el primer renglón de cada uno).
+  Como ahí los nombres no coinciden con los inventarios, Equivalencias se
+  armó **por código** (mismo nombre de compras → producto de cada bar; un
+  nombre puede ir en varios renglones). Hugo: catálogo de
+  "INVENTARIO_HUGO_actualizado.xlsx" + equivalencias de sus compras viejas.
+- **Precio = el que viene en el reporte, por unidad de producto, tal cual**
+  (decisión de Ignacio, octubre 2026: Precio Unitario, columna H, en
+  Archie/Hugo; columna "Precio Unitario" en el resumen de Felicidad e
+  Industrias). Si después resultan mal, se vuelve a importar el reporte.
+  Ojo: en Cuccina las bebidas de corte suelen tener cantidad en litros
+  (ej. Chivas 0,7), así que ese precio podría ser por litro; se lo
+  mostramos y prefirió dejarlo así por ahora.
 - **Pedidos** (solo con la planilla central; los hacen encargados y Noel):
   fecha y Barra/Cocina → proveedor → productos del catálogo con precio de
   costo (o "sin precio") y total que se va sumando → Revisar → "Enviar al

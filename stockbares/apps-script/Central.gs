@@ -20,9 +20,16 @@
 //     Precio Unitario (columna H). De cada producto vale la ultima compra,
 //     de cualquier bar (los proveedores son los mismos). Lo bonificado al
 //     100 % y las notas de credito no cuentan como precio.
+//   - "Compras Felicidad e Industrias" (o cualquier "Compras ..."): el
+//     resumen de compras de los bares que comparten Cuccina: GRUPO2
+//     (proveedor, escrito solo en el primer renglon de cada uno),
+//     DENOMINACION y Precio Unitario. No tiene fechas: vale como precio,
+//     pero una compra con fecha de otra hoja le gana.
 //   - "Equivalencias": Nombre en compras | Producto del stock. Para cuando
 //     Cuccina lo llama distinto que el stock (el nombre que vale es el del
-//     stock). "No es stock" = no preguntar mas por ese (flete, etc.).
+//     stock). Un mismo nombre de compras puede ir en varios renglones (uno
+//     por cada producto de distintos bares). "No es stock" = no preguntar
+//     mas por ese (flete, etc.).
 //
 // En la planilla de cada bar este codigo usa (y crea si faltan): Conteos,
 // Catalogo, Resumen, Config, Cierres y Pedidos.
@@ -191,32 +198,35 @@ function hojasCompras_() {
 function leerCompras_(sh) {
   const data = sh.getDataRange().getValues();
   const out = [];
-  let c = null;
+  let c = null, prov = "";
   for (let i = 0; i < data.length; i++) {
     const r = data[i];
     const t = r.map(norm_);
-    if (t.some(function (x) { return /^descripcion$|^producto$|^nombre$|^articulo$/.test(x); })) {
+    if (t.some(function (x) { return /^descripcion$|^denominacion$|^producto$|^nombre$|^articulo$/.test(x); })) {
       const col = function (re) { for (let j = 0; j < t.length; j++) if (re.test(t[j])) return j; return -1; };
       c = {
         fecha: col(/^fecha doc/) >= 0 ? col(/^fecha doc/) : col(/^fecha/),
-        prov: col(/razon social|proveedor/),
-        nom: col(/^descripcion|^producto|^nombre|^articulo/),
+        prov: col(/razon social|proveedor/) >= 0 ? col(/razon social|proveedor/) : col(/^grupo ?2$/),
+        nom: col(/^descripcion|^denominacion|^producto|^nombre|^articulo/),
         precio: col(/precio unitario/) >= 0 ? col(/precio unitario/) : col(/costo/) >= 0 ? col(/costo/) : col(/precio/) >= 0 ? col(/precio/) : 7,
         desc: col(/^descuento item/) >= 0 ? col(/^descuento item/) : col(/^descuento$/),
         tipo: col(/^tipo/)
       };
+      prov = "";
       continue;
     }
     if (!c) continue;
+    // En los resumenes el proveedor va solo en el primer renglon de cada uno.
+    if (c.prov >= 0 && String(r[c.prov] === undefined ? "" : r[c.prov]).trim()) prov = String(r[c.prov]).trim().replace(/\s*\(\d+\)\s*$/, "");
     const nombre = String(r[c.nom] === undefined ? "" : r[c.nom]).trim();
-    if (!nombre) continue;
+    if (!nombre || /^total/i.test(nombre) || /^total/i.test(prov)) continue;
     if (c.desc >= 0 && num_(r[c.desc]) >= 100) continue;
     if (c.tipo >= 0 && /^n\.? ?c\b|credito/i.test(norm_(r[c.tipo]))) continue;
     const costo = precio_(r[c.precio]);
     if (!(costo > 0)) continue;
     out.push({
       nombre: nombre,
-      proveedor: c.prov >= 0 ? String(r[c.prov]).trim() : "",
+      proveedor: prov,
       costo: costo,
       fecha: c.fecha >= 0 ? fechaMs_(r[c.fecha]) : 0
     });
@@ -232,12 +242,16 @@ function todasLasCompras_() {
   return lista.sort(function (a, b) { return a.fecha - b.fecha || a.orden - b.orden; });
 }
 
-// { nombre en compras (normalizado): producto del stock o "No es stock" }
+// { nombre en compras (normalizado): [productos del stock] } ("No es stock"
+// si alguno lo dice).
 function leerEquivalencias_() {
   const out = {};
   filasCentral_(SHEET_EQUIV).forEach(function (r) {
     const k = norm_(r[0]), v = String(r[1] || "").trim();
-    if (k && v) out[k] = norm_(v) === norm_(NO_ES_STOCK) ? NO_ES_STOCK : v;
+    if (!k || !v) return;
+    if (norm_(v) === norm_(NO_ES_STOCK)) { out[k] = NO_ES_STOCK; return; }
+    if (out[k] === NO_ES_STOCK) return;
+    (out[k] = out[k] || []).push(v);
   });
   return out;
 }
@@ -251,7 +265,7 @@ function preciosDelCatalogo_(catalogo) {
     const k = norm_(c.nombre);
     if (eq[k] === NO_ES_STOCK) return;
     const keys = [k];
-    if (eq[k] && keys.indexOf(norm_(eq[k])) < 0) keys.push(norm_(eq[k]));
+    (eq[k] || []).forEach(function (v) { if (keys.indexOf(norm_(v)) < 0) keys.push(norm_(v)); });
     keys.forEach(function (x) { (porNom[x] = porNom[x] || []).push(c); });
   });
   const out = {};
@@ -662,10 +676,9 @@ function doPost(e) {
       if (compra && producto) {
         const sh = hojaCentral_(SHEET_EQUIV, EQUIV_HEADERS);
         const data = sh.getDataRange().getValues();
-        let found = -1;
-        for (let i = 1; i < data.length; i++) if (norm_(data[i][0]) === norm_(compra)) { found = i + 1; break; }
-        if (found > 0) sh.getRange(found, 1, 1, 2).setValues([[compra, producto]]);
-        else sh.appendRow([compra, producto]);
+        let existe = false;
+        for (let i = 1; i < data.length; i++) if (norm_(data[i][0]) === norm_(compra) && norm_(data[i][1]) === norm_(producto)) existe = true;
+        if (!existe) sh.appendRow([compra, producto]);
       }
 
     } else if (action === "delete_carga") {
