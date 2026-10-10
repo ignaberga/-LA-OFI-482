@@ -93,14 +93,23 @@ quiere armar.
   H)**, proveedor = Razon Social. No cuentan lo bonificado al 100 % ni las
   notas de crédito. Cada proveedor guarda su último precio (en el pedido se
   usa el de ese proveedor).
-- **Nombres:** los que valen son los del **stock** (nombres y medidas); el
-  reporte de Cuccina está desactualizado y lo van a corregir. Un mismo
-  producto se llama igual en todos los bares. Mientras tanto, Equivalencias
-  traduce. Por ahora **solo bebidas**. Lo que aparece en "Compras <Bar>" y
-  no está en el catálogo ni en Equivalencias le sale al Administrador como
-  "Nuevos en las compras" (Pedidos y Config) con tres opciones: Es nuevo
-  (formulario de producto con el nombre; si se cambia el nombre se anota la
-  equivalencia), Es el mismo que… (acción `equiv_set`) o No es stock.
+- **Nombres (decisión de octubre 2026):** en **todos** los bares el nombre
+  del producto en el stock es **igual** al del reporte de compras de
+  Cuccina, aunque el nombre tenga mal la medida (ej. "Fernet Branca 1000cc"
+  que en realidad es de 750): la medida buena va en la columna
+  **Contenido** del Catálogo, que es la que usa la app para los litros. Un
+  solo catálogo por bar sirve para el stock y para los pedidos. Archie y
+  Hugo tienen cada uno su propio Cuccina (hojas "Compras Archie" y "Compras
+  Hugo"); los otros ~8 bares (sociedades Industrias SRL y Felicidad SRL)
+  comparten un mismo Cuccina, así que tienen **un solo reporte de compras**
+  para todos (una hoja "Compras …" con otro nombre: sirve para precios pero
+  no dispara "Nuevos en las compras", que solo mira "Compras <Bar>").
+  Equivalencias queda como red de seguridad. Por ahora **solo bebidas**. Lo
+  que aparece en "Compras <Bar>" y no está en el catálogo ni en
+  Equivalencias le sale al Administrador como "Nuevos en las compras"
+  (Pedidos y Config) con tres opciones: Es nuevo (formulario de producto
+  con el nombre; si se cambia el nombre se anota la equivalencia), Es el
+  mismo que… (acción `equiv_set`) o No es stock.
 - **Pedidos** (solo con la planilla central; los hacen encargados y Noel):
   fecha y Barra/Cocina → proveedor → productos del catálogo con precio de
   costo (o "sin precio") y total que se va sumando → Revisar → "Enviar al
@@ -112,14 +121,6 @@ quiere armar.
   (`stockbares_bar_<bar>_pedido_borrador`). Al Administrador se le avisa
   qué productos no tienen precio. Los números de WhatsApp van solo en la
   planilla.
-- **Otros bares (pendiente, después de Archie y Hugo):** en Cuccina sus
-  nombres no coinciden con el stock y no se van a corregir. Mismo código
-  central para todos; en la hoja Bares una columna "Pedidos con": "Stock"
-  (Archie, Hugo: se pide con los productos del catálogo) o "Compras" (se
-  pide con la lista que sale sola de "Compras <Bar>", nombres de Cuccina,
-  sin equivalencias ni "nuevos en las compras"). En esos bares: se pueden
-  agregar productos a mano a la lista de pedidos, y el pedido saltea
-  Barra/Cocina (fecha → proveedor → productos).
 - La planilla de prueba es de la cuenta de Ignacio; la definitiva la tiene
   que crear Noel con su cuenta (el Apps Script funciona a nombre de quien lo
   implementa).
