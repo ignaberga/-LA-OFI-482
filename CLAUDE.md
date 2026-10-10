@@ -126,6 +126,13 @@ quiere armar.
   armó **por código** (mismo nombre de compras → producto de cada bar; un
   nombre puede ir en varios renglones). Hugo: catálogo de
   "INVENTARIO_HUGO_actualizado.xlsx" + equivalencias de sus compras viejas.
+- **Cargar compras** (menú "Stock bares → Cargar compras (Excel de
+  Cuccina)"): ventana donde Ignacio elige el destino (Archie, Hugo,
+  Felicidad e Industrias, o las "Compras …" que haya), el Excel y la hoja
+  (sugiere "depurado" o la que empieza con "COMPRAS"). El Excel se lee en
+  la ventana (SheetJS de cdnjs) y `cargarCompras` lo **agrega** a la hoja
+  "Compras <destino>" sin repetir renglones (casilla para reemplazar). Así
+  no se pierden precios viejos y gana lo más nuevo.
 - **Precio = el que viene en el reporte, por unidad de producto, tal cual**
   (decisión de Ignacio, octubre 2026: Precio Unitario, columna H, en
   Archie/Hugo; columna "Precio Unitario" en el resumen de Felicidad e

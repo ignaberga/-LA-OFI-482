@@ -307,9 +307,113 @@ function onOpen() {
   hojaCentral_(SHEET_EQUIV, EQUIV_HEADERS);
   SpreadsheetApp.getUi().createMenu("Stock bares")
     .addItem("Armar links de instalación", "armarLinks")
+    .addItem("Cargar compras (Excel de Cuccina)", "cargarComprasVentana")
     .addItem("Cambiar la dirección del código", "cambiarDireccion")
     .addToUi();
 }
+
+// ------------------------------------------------------------
+// Cargar compras: se elige el Excel de Cuccina y a que hoja "Compras ..."
+// va. Lo nuevo se agrega abajo sin repetir renglones (asi no se pierden
+// los precios de lo que este mes no se compro); vale siempre lo mas nuevo.
+// ------------------------------------------------------------
+function cargarComprasVentana() {
+  const destinos = hojasCompras_().map(function (sh) { return sh.getName().replace(/^compras\s*/i, ""); }).filter(String);
+  ["Archie", "Hugo", "Felicidad e Industrias"].forEach(function (d) {
+    if (!destinos.some(function (x) { return norm_(x) === norm_(d); })) destinos.push(d);
+  });
+  const html = HtmlService.createHtmlOutput(VENTANA_COMPRAS.replace("__DESTINOS__", JSON.stringify(destinos)))
+    .setWidth(460).setHeight(430);
+  SpreadsheetApp.getUi().showModalDialog(html, "Cargar compras");
+}
+
+// Recibe los renglones del Excel (la fila de titulos incluida) y los pasa
+// a la hoja "Compras <destino>".
+function cargarCompras(destino, filas, reemplazar) {
+  destino = String(destino || "").trim();
+  if (!destino) throw new Error("Elegí a qué bar van las compras.");
+  if (!Array.isArray(filas) || filas.length < 2) throw new Error("El Excel no tiene renglones.");
+  const ancho = Math.max.apply(null, filas.map(function (r) { return r.length; }));
+  const datos = filas.map(function (r) {
+    const fila = [];
+    for (let j = 0; j < ancho; j++) {
+      let v = r[j] === undefined || r[j] === null ? "" : r[j];
+      if (typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v)) {
+        const p = v.split("-");
+        v = new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2]));
+      }
+      fila.push(v);
+    }
+    return fila;
+  });
+  const titulos = datos[0].map(norm_);
+  if (!titulos.some(function (t) { return /^descripcion$|^denominacion$|^producto$|^nombre$|^articulo$/.test(t); })) {
+    throw new Error("No encuentro la columna Descripción (o Denominación) en la primera fila de esa hoja. ¿Es el reporte de compras?");
+  }
+  const nombre = "Compras " + destino;
+  let sh = hojasCompras_().filter(function (h) { return norm_(h.getName()) === norm_(nombre); })[0];
+  if (!sh) sh = central_().insertSheet(nombre);
+  const clave = function (r) {
+    return r.map(function (v) { return isDate_(v) ? Utilities.formatDate(v, Session.getScriptTimeZone(), "yyyy-MM-dd") : String(v).trim(); }).join("|");
+  };
+  let agregar = datos;
+  let repetidos = 0;
+  if (reemplazar || sh.getLastRow() === 0) {
+    sh.clear();
+  } else {
+    const hay = {};
+    sh.getDataRange().getValues().forEach(function (r) { hay[clave(r.slice(0, ancho))] = true; });
+    // Los titulos ya estan arriba; de lo nuevo van solo los renglones que falten.
+    agregar = datos.slice(1).filter(function (r) {
+      const k = clave(r);
+      if (hay[k]) { repetidos++; return false; }
+      hay[k] = true;
+      return true;
+    });
+  }
+  if (agregar.length) {
+    if (sh.getMaxColumns() < ancho) sh.insertColumnsAfter(sh.getMaxColumns(), ancho - sh.getMaxColumns());
+    sh.getRange(sh.getLastRow() + 1, 1, agregar.length, ancho).setValues(agregar);
+  }
+  if (reemplazar || agregar === datos) sh.setFrozenRows(1);
+  const nuevos = agregar === datos ? datos.length - 1 : agregar.length;
+  return { hoja: nombre, agregados: nuevos, repetidos: repetidos };
+}
+
+const VENTANA_COMPRAS = '<!DOCTYPE html><html><head><meta charset="utf-8"><base target="_top">' +
+  '<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>' +
+  '<style>body{font-family:Arial,sans-serif;font-size:14px;color:#2B2024}label{display:block;font-weight:bold;margin:12px 0 4px}' +
+  'select,input[type=file]{width:100%;padding:6px;font-size:14px}#msg{margin-top:12px;line-height:1.4}' +
+  'button{margin-top:16px;padding:10px 18px;font-size:15px;font-weight:bold;background:#7A2E3E;color:#fff;border:0;border-radius:8px;cursor:pointer}' +
+  'button:disabled{opacity:.5}.chk{font-weight:normal;margin-top:12px}.err{color:#A33A2A}.ok{color:#2F6B45}</style></head><body>' +
+  '<label>¿De qué bar son las compras?</label><select id="destino"></select>' +
+  '<label>Excel de Cuccina</label><input type="file" id="archivo" accept=".xlsx,.xls,.csv">' +
+  '<label id="lhoja" style="display:none">Hoja del Excel</label><select id="hoja" style="display:none"></select>' +
+  '<label class="chk"><input type="checkbox" id="reemplazar"> Borrar lo que había antes en esa hoja (si no, se agrega lo nuevo sin repetir)</label>' +
+  '<button id="cargar" disabled>Cargar</button><div id="msg"></div>' +
+  '<script>' +
+  'var DEST=__DESTINOS__;var libro=null;var d=document.getElementById("destino");' +
+  'DEST.forEach(function(x){var o=document.createElement("option");o.value=o.textContent=x;d.appendChild(o);});' +
+  'function msg(t,c){var m=document.getElementById("msg");m.className=c||"";m.textContent=t;}' +
+  'function fecha(v){function p(n){return(n<10?"0":"")+n;}return v.getFullYear()+"-"+p(v.getMonth()+1)+"-"+p(v.getDate());}' +
+  'document.getElementById("archivo").addEventListener("change",function(e){var f=e.target.files[0];if(!f)return;' +
+  'if(typeof XLSX==="undefined"){msg("No se pudo cargar el lector de Excel. Revisá la conexión y volvé a abrir esta ventana.","err");return;}' +
+  'msg("Leyendo el Excel…");var r=new FileReader();r.onload=function(){try{libro=XLSX.read(new Uint8Array(r.result),{type:"array",cellDates:true});}' +
+  'catch(err){msg("No pude leer ese archivo: "+err.message,"err");return;}' +
+  'var h=document.getElementById("hoja");h.innerHTML="";var elegida=libro.SheetNames[0];' +
+  'libro.SheetNames.forEach(function(n){var o=document.createElement("option");o.value=o.textContent=n;h.appendChild(o);});' +
+  'var dep=libro.SheetNames.filter(function(n){return /depurad/i.test(n);})[0]||libro.SheetNames.filter(function(n){return /^compras/i.test(n);})[0];' +
+  'if(dep)elegida=dep;h.value=elegida;var ver=libro.SheetNames.length>1;h.style.display=ver?"block":"none";document.getElementById("lhoja").style.display=ver?"block":"none";' +
+  'document.getElementById("cargar").disabled=false;msg("Listo para cargar.");e.target.value="";};r.readAsArrayBuffer(f);});' +
+  'document.getElementById("cargar").addEventListener("click",function(){if(!libro)return;' +
+  'var hoja=libro.Sheets[document.getElementById("hoja").value];' +
+  'var filas=XLSX.utils.sheet_to_json(hoja,{header:1,raw:true,defval:""}).map(function(r){return r.map(function(v){return v instanceof Date?fecha(v):v;});})' +
+  '.filter(function(r){return r.some(function(v){return v!=="";});});' +
+  'var b=this;b.disabled=true;msg("Cargando "+(filas.length-1)+" renglones…");' +
+  'google.script.run.withSuccessHandler(function(res){b.disabled=false;msg("Listo: "+res.agregados+" renglones nuevos en la hoja «"+res.hoja+"»"+(res.repetidos?" ("+res.repetidos+" ya estaban y no se repitieron)":"")+". La app ya toma los precios nuevos.","ok");})' +
+  '.withFailureHandler(function(err){b.disabled=false;msg("No se cargó: "+err.message,"err");})' +
+  '.cargarCompras(d.value,filas,document.getElementById("reemplazar").checked);});' +
+  '</script></body></html>';
 
 // La direccion /exec de la implementacion activa. No se adivina (Google a
 // veces devuelve la de una implementacion vieja): se pega una vez y queda
