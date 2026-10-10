@@ -81,7 +81,12 @@ quiere armar.
   stock, o "No es stock"). Las planillas de cada bar quedan solo con datos
   (el código las abre por ID).
   Link: `…/stockbares/#central=<exec>&clave=<clave>`, lo arma el menú
-  "Stock bares → Armar links de instalación". La clave dice persona, rol y
+  "Stock bares → Armar links de instalación" con la dirección /exec guardada
+  en la hoja **Ajustes** (B1; la pide la primera vez; "Cambiar la dirección
+  del código" la cambia y rearma todos los links con las mismas claves). No
+  se usa `ScriptApp.getService().getUrl()`: devolvía la de una
+  implementación archivada. Actualizar siempre con Gestionar
+  implementaciones → Nueva versión, nunca "Nueva implementación". La clave dice persona, rol y
   bares; el encargado solo entra a su bar (lo controla el Apps Script). Los
   links viejos (`vincular`) siguen andando; un link central encima de uno
   viejo pasa los bares y los pendientes a la central. En el celular:

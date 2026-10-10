@@ -53,7 +53,8 @@
 //    Autorizar los permisos que pide Google.
 // 4. Volver a la planilla y recargarla: aparece el menu "Stock bares".
 //    Completar las hojas Bares y Personas y usar "Armar links de
-//    instalacion".
+//    instalacion" (la primera vez pide la URL /exec de la implementacion:
+//    queda guardada en la hoja Ajustes).
 //
 // COMO ACTUALIZARLO (sin que cambien los links):
 // 1. Extensiones > Apps Script, borrar todo, pegar este archivo y guardar.
@@ -306,22 +307,51 @@ function onOpen() {
   hojaCentral_(SHEET_EQUIV, EQUIV_HEADERS);
   SpreadsheetApp.getUi().createMenu("Stock bares")
     .addItem("Armar links de instalación", "armarLinks")
+    .addItem("Cambiar la dirección del código", "cambiarDireccion")
     .addToUi();
 }
 
-// Le da una clave a quien no tiene y escribe el link de instalacion de cada uno.
+// La direccion /exec de la implementacion activa. No se adivina (Google a
+// veces devuelve la de una implementacion vieja): se pega una vez y queda
+// guardada en la hoja "Ajustes" (celda B1).
+const SHEET_AJUSTES = "Ajustes";
+function esDireccion_(u) { return /^https:\/\/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]+\/exec$/.test(String(u || "").trim()); }
+function hojaAjustes_() {
+  const sh = hojaCentral_(SHEET_AJUSTES, null);
+  if (String(sh.getRange(1, 1).getValue()) === "") sh.getRange(1, 1).setValue("Dirección del código (termina en /exec)");
+  return sh;
+}
+function direccion_() {
+  const u = String(hojaAjustes_().getRange(1, 2).getValue() || "").trim();
+  return esDireccion_(u) ? u : "";
+}
+function pedirDireccion_() {
+  const ui = SpreadsheetApp.getUi();
+  const r = ui.prompt("Dirección del código",
+    "En Apps Script: Implementar > Gestionar implementaciones > copiá la URL de la aplicación web (termina en /exec) y pegala acá.",
+    ui.ButtonSet.OK_CANCEL);
+  if (r.getSelectedButton() !== ui.Button.OK) return "";
+  const u = String(r.getResponseText() || "").trim();
+  if (!esDireccion_(u)) { ui.alert("Esa dirección no sirve: tiene que empezar con https://script.google.com/macros/s/ y terminar en /exec."); return ""; }
+  hojaAjustes_().getRange(1, 2).setValue(u);
+  return u;
+}
+function cambiarDireccion() {
+  if (pedirDireccion_()) armarLinks();
+}
+
+// Le da una clave a quien no tiene y escribe (o corrige) el link de
+// instalacion de cada uno con la direccion guardada en Ajustes.
 function armarLinks() {
-  const url = ScriptApp.getService().getUrl();
-  if (!url) {
-    SpreadsheetApp.getUi().alert("Primero hay que implementar el código como aplicación web (Implementar > Nueva implementación).");
-    return;
-  }
+  const url = direccion_() || pedirDireccion_();
+  if (!url) return;
   const sh = hojaCentral_(SHEET_PERSONAS, PERSONAS_HEADERS);
   const data = sh.getDataRange().getValues();
   for (let i = 1; i < data.length; i++) {
     if (String(data[i][0]).trim() === "") continue;
     let clave = String(data[i][3] || "").trim();
-    if (!clave) clave = Utilities.getUuid().replace(/-/g, "").slice(0, 20);
+    // Empieza con letra para que la planilla nunca la tome como numero.
+    if (!clave) clave = "k" + Utilities.getUuid().replace(/-/g, "").slice(0, 19);
     sh.getRange(i + 1, 4, 1, 2).setValues([[clave, APP_URL + "#central=" + url + "&clave=" + clave]]);
   }
 }
