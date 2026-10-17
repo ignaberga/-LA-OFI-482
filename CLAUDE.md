@@ -110,6 +110,11 @@ quiere armar.
   proveedor** — pendiente que Noel diga si se puede sacar por proveedor).
   Las columnas GRUPO se reconocen por lo que dicen (fecha, bar o
   proveedor).
+- **Vinos:** si el catálogo de un bar no tiene ninguna familia de vinos
+  (Hugo: los vinos no se cuentan), los vinos de sus compras no aparecen en
+  "Nuevos en las compras". Vino = comprado por **Unidad** y con la cepa en
+  el nombre o de una bodega/distribuidora de vinos (`esVino_`). Sus precios
+  igual quedan en la hoja Precios (le sirven a Archie, que sí cuenta vinos).
 - **Nombres (decisión de octubre 2026):** en **todos** los bares el nombre
   del producto en el stock es **igual** al del reporte de compras de
   Cuccina, aunque el nombre tenga mal la medida (ej. "Fernet Branca 1000cc"

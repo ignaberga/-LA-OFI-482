@@ -422,19 +422,32 @@ function preciosDelCatalogo_(barNombre, catalogo) {
   return out;
 }
 
+// Vinos: en Cuccina se compran por unidad (las bebidas de corte, por litro)
+// y vienen de bodegas o distribuidoras de vino, o tienen la cepa en el
+// nombre.
+const CEPAS_ = /malbec|cabernet|cab\.? ?(franc|sauv)|merlot|pinot|chardonnay|torront|syrah|bonarda|sauvignon|semillon|garnacha|tannat|sangiovese|criolla|blend|claret|moscatel|gewurz|zinfandel|botrytis|\brose\b|rosado|tinto|blanco|brut|espumante|champa|naranjo|\bvino/i;
+const PROV_VINO_ = /vino|wine|vitis|cinco rios|vocacion|casta 1994|rocamadre|finca suarez|gredal|bodega/i;
+function esVino_(p) {
+  return /^unid/i.test(norm_(p.medida)) && (CEPAS_.test(norm_(p.nombre)) || PROV_VINO_.test(norm_(p.proveedor)));
+}
+
 // Lo de barra que aparece en las compras de este bar y no esta en su
 // catalogo ni en Equivalencias: para que el administrador diga que es.
+// Si el bar no cuenta vinos (no tiene ninguna familia de vinos en el
+// catalogo, como Hugo), los vinos no aparecen.
 function comprasNuevas_(barNombre, catalogo) {
   const eq = leerEquivalencias_();
   const nb = norm_(barNombre);
   const enCatalogo = {}, codigos = {};
   catalogo.forEach(function (p) { enCatalogo[norm_(p.nombre)] = true; if (p.codigo) codigos[p.codigo] = true; });
+  const cuentaVinos = catalogo.some(function (p) { return /vino/i.test(norm_(p.familia)); });
   const ult = {};
   leerPrecios_().forEach(function (p) {
     const delBar = norm_(p.origen) === nb || p.bares.indexOf(nb) >= 0;
     if (!delBar) return;
     // Solo bebidas: en los reportes con Familia, la de barra.
     if (p.familia ? !/barra/i.test(p.familia) : norm_(p.origen) !== nb) return;
+    if (!cuentaVinos && esVino_(p)) return;
     const k = norm_(p.nombre);
     if (enCatalogo[k] || eq[k] || (p.codigo && codigos[p.codigo])) return;
     if (!ult[k] || p.fecha >= ult[k].fecha) ult[k] = p;
