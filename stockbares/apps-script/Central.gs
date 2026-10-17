@@ -806,17 +806,26 @@ function filtroBebidas_(destino, compras, prov, reemplazar) {
     // Codigos y nombres de los catalogos de todos los bares.
     catalogo = { codigos: {}, nombres: {} };
     const eq = leerEquivalencias_();
+    // Los codigos son de cada Cuccina: no se mezclan los de los bares que
+    // tienen su propio reporte (Archi, Hugo) con los de este.
+    const propios = hojasCompras_().map(function (h) { return h.getName().replace(/^compras\s*/i, ""); })
+      .filter(function (n) { return !mismoBar_(n, destino) && norm_(n) !== norm_(destino); }).concat(["Archi", "Hugo"]);
     leerBares_().forEach(function (b) {
+      const otroCuccina = propios.some(function (n) { return mismoBar_(n, b.nombre); });
       try {
         const sh = SpreadsheetApp.openById(b.id).getSheetByName(SHEET_CATALOGO);
         if (!sh) return;
+        // Solo los productos de Barra (lo de Cocina de un catalogo no cuenta).
         sh.getDataRange().getValues().slice(1).forEach(function (r) {
+          if (cat_(String(r[1] || "").trim()) !== "Barra") return;
           if (String(r[0]).trim()) catalogo.nombres[norm_(r[0])] = true;
-          if (String(r[6] === undefined ? "" : r[6]).trim()) catalogo.codigos[String(r[6]).trim()] = true;
+          if (!otroCuccina && String(r[6] === undefined ? "" : r[6]).trim()) catalogo.codigos[String(r[6]).trim()] = true;
         });
       } catch (e) {}
     });
-    Object.keys(eq).forEach(function (k) { if (eq[k] !== NO_ES_STOCK) catalogo.nombres[k] = true; });
+    Object.keys(eq).forEach(function (k) {
+      if (eq[k] !== NO_ES_STOCK && eq[k].some(function (v) { return catalogo.nombres[norm_(v)]; })) catalogo.nombres[k] = true;
+    });
   };
   const provBebida = proveedoresDeBebida_();
   return function (datos) {
