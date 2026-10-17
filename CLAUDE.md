@@ -92,12 +92,24 @@ quiere armar.
   viejo pasa los bares y los pendientes a la central. En el celular:
   `stockbares_central`, `stockbares_rol`. `Code.gs` es el script viejo por
   bar (Archie y Hugo lo tienen pegado hasta que se cambie).
-- **Precios:** una sola lista para todos los bares (los proveedores son los
-  mismos), armada con las compras de **todos**: de cada producto vale la
-  **última compra** (Fecha Documento), precio = **Precio Unitario (columna
-  H)**, proveedor = Razon Social. No cuentan lo bonificado al 100 % ni las
-  notas de crédito. Cada proveedor guarda su último precio (en el pedido se
-  usa el de ese proveedor).
+- **Precios (desde 17/10/2026):** precio = **total con impuestos ÷
+  cantidad** ("Precio Total" en Archie/Hugo, "TOTAL" en Felicidad e
+  Industrias). Si la medida de la compra es **Litro** (o Kilo) y el
+  producto se cuenta en botellas, el precio de la botella = precio por
+  litro × Contenido del catálogo. De cada producto vale la **última compra**
+  de cada proveedor; lo bonificado (total 0) y las notas de crédito no
+  cuentan. Se precalcula en la hoja **Precios** de la central al cargar
+  compras (menú "Recalcular precios" si se editan a mano): la app no lee
+  todas las compras en cada pedido. Búsqueda: por **código** (columna 7 del
+  Catálogo) en las compras donde figura ese bar, si no por nombre o
+  Equivalencias; si hay compras con proveedor no se mezclan las "Sin
+  proveedor". Reportes: Archie/Hugo "Detalle de Compras" (con Familia y
+  U. Medida: solo cuenta lo de familia BARRA para "nuevos"); Felicidad e
+  Industrias "DETALLE DE COMPRAS … TOTALES POR: FECHA" (2 renglones de
+  título; GRUPO2 = fecha, SUBGRUPO2 = bar, trae CODIGO, **no trae
+  proveedor** — pendiente que Noel diga si se puede sacar por proveedor).
+  Las columnas GRUPO se reconocen por lo que dicen (fecha, bar o
+  proveedor).
 - **Nombres (decisión de octubre 2026):** en **todos** los bares el nombre
   del producto en el stock es **igual** al del reporte de compras de
   Cuccina, aunque el nombre tenga mal la medida (ej. "Fernet Branca 1000cc"
@@ -142,15 +154,23 @@ quiere armar.
   mostramos y prefirió dejarlo así por ahora.
 - **Pedidos** (solo con la planilla central; los hacen encargados y Noel):
   fecha y Barra/Cocina → proveedor → productos del catálogo con precio de
-  costo (o "sin precio") y total que se va sumando → Revisar → "Enviar al
-  dueño" abre WhatsApp con **un solo mensaje** con todos los proveedores,
-  al número del dueño del bar (hoja Bares; sin número, se elige el
-  contacto). El dueño aprueba por WhatsApp; no hay estados ni recepción ni
-  pedido sugerido (más adelante). Se guarda en la hoja **Pedidos** del bar
-  (acción `pedido_add`). El borrador queda en el celular
-  (`stockbares_bar_<bar>_pedido_borrador`). Al Administrador se le avisa
-  qué productos no tienen precio. Los números de WhatsApp van solo en la
-  planilla.
+  costo (o "sin precio") y total que se va sumando → Revisar → **"Enviar
+  pedido"** → cartel "Pedido realizado con éxito" (sin señal: "guardado en
+  el celular"). **Sin WhatsApp** (decisión de Noel, 17/10/2026). Todos van
+  a la hoja **Pedidos de la planilla central** (acción `pedido_add`): Fecha
+  | Bar | Pedido | Categoría | Proveedor | Producto | Cantidad | Unidad |
+  Precio | Subtotal | Persona | Nota | Cargado | **Estado** | ID, con
+  filtro. Estado (lista: En espera / Recibido / Cancelado) lo pone Noel por
+  renglón y pinta el renglón amarillo / verde / rojo; la app lo muestra en
+  "Pedidos hechos". Los pedidos viejos que quedaron en la hoja Pedidos de
+  cada bar se siguen viendo. El borrador queda en el celular
+  (`stockbares_bar_<bar>_pedido_borrador`).
+- **Versión de la app:** `APP_VERSION` en `stockbares/index.html` tiene que
+  ser igual a `stockbares/version.json`. Al abrir, la app lee version.json
+  y si cambió se recarga sola (una vez por versión, con `?v=`). **Al
+  publicar un cambio de la app, subir los dos números.** Mientras lee la
+  planilla muestra "Actualizando…"; si el código de la planilla falla, el
+  cartel muestra el motivo.
 - La planilla de prueba es de la cuenta de Ignacio; la definitiva la tiene
   que crear Noel con su cuenta (el Apps Script funciona a nombre de quien lo
   implementa).

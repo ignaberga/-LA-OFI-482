@@ -180,67 +180,172 @@ function precio_(v) {
   return isNaN(n) ? null : n;
 }
 
-// "02/09/2026", una fecha de la planilla o un numero → milisegundos.
+// "02/09/2026", "2026/08/01", una fecha de la planilla o un numero → milisegundos.
 function fechaMs_(v) {
   if (isDate_(v)) return v.getTime();
-  const m = String(v || "").match(/(\d{1,2})\/(\d{1,2})\/(\d{2,4})/);
+  const t = String(v || "").trim();
+  let m = t.match(/^(\d{4})[\/-](\d{1,2})[\/-](\d{1,2})/);
+  if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])).getTime();
+  m = t.match(/(\d{1,2})\/(\d{1,2})\/(\d{2,4})/);
   if (m) return new Date(Number(m[3].length === 2 ? "20" + m[3] : m[3]), Number(m[2]) - 1, Number(m[1])).getTime();
-  const t = new Date(String(v || "")).getTime();
-  return isNaN(t) ? 0 : t;
+  return 0;
 }
+function esFecha_(v) { return isDate_(v) || /^\d{4}[\/-]\d{1,2}[\/-]\d{1,2}$/.test(String(v || "").trim()); }
 
 // Hojas "Compras ..." de la planilla central.
 function hojasCompras_() {
   return central_().getSheets().filter(function (sh) { return /^compras\b/i.test(sh.getName()); });
 }
 
-// Lee una hoja de compras de Cuccina pegada tal cual. Puede tener los
-// titulos repetidos (si se pegaron varios reportes uno debajo del otro).
-function leerCompras_(sh) {
+// Busca la fila de titulos (puede haber renglones de titulo arriba, como en
+// el reporte de Felicidad e Industrias) y devuelve las columnas que usamos.
+function columnasCompras_(fila) {
+  const t = fila.map(norm_);
+  const col = function (re) { for (let j = 0; j < t.length; j++) if (re.test(t[j])) return j; return -1; };
+  if (col(/^descripcion$|^denominacion$|^producto$|^nombre$|^articulo$/) < 0) return null;
+  const primera = function () { for (let i = 0; i < arguments.length; i++) { const c = col(arguments[i]); if (c >= 0) return c; } return -1; };
+  return {
+    nom: col(/^descripcion$|^denominacion$|^producto$|^nombre$|^articulo$/),
+    cod: col(/^codigo$/),
+    fecha: primera(/^fecha doc/, /^fecha/),
+    prov: col(/razon social|^proveedor/),
+    grupos: [col(/^grupo ?2$/), col(/^subgrupo ?2$/)].filter(function (c) { return c >= 0; }),
+    cant: primera(/^cantidad$/, /suma de cantidad/),
+    total: primera(/^precio total$/, /^total$/, /suma de total/),
+    unit: primera(/precio unitario/, /costo/),
+    medida: primera(/^u\.? ?medida$/, /^medida$/, /unidad de medida/),
+    familia: col(/^familia$/),
+    desc: primera(/^descuento item/, /^descuento$/),
+    tipo: col(/^tipo/)
+  };
+}
+
+// Lee una hoja de compras de Cuccina pegada tal cual. Precio = total ÷
+// cantidad (con impuestos). Lo bonificado (total 0) y las notas de credito
+// no cuentan. GRUPO2/SUBGRUPO2 pueden traer la fecha, el bar o el
+// proveedor segun como se saco el reporte: se reconoce por lo que dicen.
+function leerCompras_(sh, nombresBares) {
   const data = sh.getDataRange().getValues();
+  const bares = {};
+  (nombresBares || []).forEach(function (b) { bares[norm_(b)] = b; });
+  const origen = sh.getName().replace(/^compras\s*/i, "");
   const out = [];
   let c = null, prov = "";
   for (let i = 0; i < data.length; i++) {
     const r = data[i];
-    const t = r.map(norm_);
-    if (t.some(function (x) { return /^descripcion$|^denominacion$|^producto$|^nombre$|^articulo$/.test(x); })) {
-      const col = function (re) { for (let j = 0; j < t.length; j++) if (re.test(t[j])) return j; return -1; };
-      c = {
-        fecha: col(/^fecha doc/) >= 0 ? col(/^fecha doc/) : col(/^fecha/),
-        prov: col(/razon social|proveedor/) >= 0 ? col(/razon social|proveedor/) : col(/^grupo ?2$/),
-        nom: col(/^descripcion|^denominacion|^producto|^nombre|^articulo/),
-        precio: col(/precio unitario/) >= 0 ? col(/precio unitario/) : col(/costo/) >= 0 ? col(/costo/) : col(/precio/) >= 0 ? col(/precio/) : 7,
-        desc: col(/^descuento item/) >= 0 ? col(/^descuento item/) : col(/^descuento$/),
-        tipo: col(/^tipo/)
-      };
-      prov = "";
+    const cc = columnasCompras_(r);
+    if (cc) {
+      c = cc; prov = "";
+      // Que trae cada columna GRUPO: fechas, bares o proveedores (se mira lo
+      // que dice en los renglones de abajo).
+      c.roles = c.grupos.map(function (j) {
+        let fechas = 0, conBar = 0, total = 0;
+        for (let k = i + 1; k < data.length && total < 300; k++) {
+          if (columnasCompras_(data[k])) break;
+          const v = data[k][j];
+          if (v === "" || v === null || v === undefined) continue;
+          total++;
+          if (esFecha_(v)) fechas++;
+          else if (bares[norm_(v)]) conBar++;
+        }
+        return fechas > total / 2 ? "fecha" : conBar ? "bar" : "prov";
+      });
       continue;
     }
     if (!c) continue;
-    // En los resumenes el proveedor va solo en el primer renglon de cada uno.
-    if (c.prov >= 0 && String(r[c.prov] === undefined ? "" : r[c.prov]).trim()) prov = String(r[c.prov]).trim().replace(/\s*\(\d+\)\s*$/, "");
-    const nombre = String(r[c.nom] === undefined ? "" : r[c.nom]).trim();
-    if (!nombre || /^total/i.test(nombre) || /^total/i.test(prov)) continue;
-    if (c.desc >= 0 && num_(r[c.desc]) >= 100) continue;
-    if (c.tipo >= 0 && /^n\.? ?c\b|credito/i.test(norm_(r[c.tipo]))) continue;
-    const costo = precio_(r[c.precio]);
-    if (!(costo > 0)) continue;
+    const val = function (j) { return j >= 0 && r[j] !== undefined && r[j] !== null ? r[j] : ""; };
+    const nombre = String(val(c.nom)).trim();
+    let fecha = c.fecha >= 0 ? fechaMs_(val(c.fecha)) : 0, bar = "";
+    if (c.prov >= 0 && String(val(c.prov)).trim()) prov = String(val(c.prov)).trim();
+    c.grupos.forEach(function (j, n) {
+      const v = val(j);
+      if (String(v).trim() === "") return;
+      if (c.roles[n] === "fecha") fecha = fechaMs_(v);
+      else if (c.roles[n] === "bar") bar = bares[norm_(v)] || "";
+      else if (c.prov < 0) prov = String(v).trim();
+    });
+    if (!nombre || /^total/i.test(nombre)) continue;
+    if (c.desc >= 0 && num_(val(c.desc)) >= 100) continue;
+    if (c.tipo >= 0 && /^n\.? ?c\b|credito/i.test(norm_(val(c.tipo)))) continue;
+    let precio = null;
+    if (c.total >= 0 && c.cant >= 0) {
+      const cant = num_(val(c.cant)), tot = precio_(val(c.total));
+      if (cant > 0 && tot > 0) precio = tot / cant;
+    } else if (c.unit >= 0) {
+      precio = precio_(val(c.unit));
+    }
+    if (!(precio > 0)) continue;
     out.push({
       nombre: nombre,
-      proveedor: prov,
-      costo: costo,
-      fecha: c.fecha >= 0 ? fechaMs_(r[c.fecha]) : 0
+      codigo: c.cod >= 0 ? String(val(c.cod)).trim() : "",
+      proveedor: prov.replace(/\s*\(\d+\)\s*$/, ""),
+      precio: Math.round(precio * 100) / 100,
+      medida: c.medida >= 0 ? String(val(c.medida)).trim() : "",
+      familia: c.familia >= 0 ? String(val(c.familia)).trim() : "",
+      fecha: fecha,
+      origen: origen,
+      bar: bar
     });
   }
   return out;
 }
 
-// Todas las compras de todos los bares, de la mas vieja a la mas nueva.
-function todasLasCompras_() {
+// ------------------------------------------------------------
+// Hoja "Precios" (precalculada): la ultima compra de cada producto a cada
+// proveedor. Se rearma al cargar compras (o con el menu "Recalcular
+// precios"), asi la app no tiene que leer todas las compras cada vez.
+// ------------------------------------------------------------
+const SHEET_PRECIOS = "Precios";
+const PRECIOS_HEADERS = ["Producto (compras)", "Código", "Proveedor", "Precio", "Medida", "Fecha", "Familia", "Origen", "Bares"];
+
+function reconstruirPrecios_() {
+  const bares = leerBares_().map(function (b) { return b.nombre; });
   let lista = [];
-  hojasCompras_().forEach(function (sh) { lista = lista.concat(leerCompras_(sh)); });
-  lista.forEach(function (x, i) { x.orden = i; });
-  return lista.sort(function (a, b) { return a.fecha - b.fecha || a.orden - b.orden; });
+  hojasCompras_().forEach(function (sh) { lista = lista.concat(leerCompras_(sh, bares)); });
+  const ult = {};
+  lista.forEach(function (x, i) {
+    const k = [x.origen, x.codigo, norm_(x.nombre), x.proveedor].join("|");
+    const prev = ult[k];
+    if (!prev || x.fecha >= prev.fecha) {
+      const losBares = prev ? prev.bares : {};
+      ult[k] = x; x.orden = i; x.bares = losBares;
+    }
+    if (x.bar) ult[k].bares[x.bar] = true;
+  });
+  const filas = Object.keys(ult).map(function (k) { return ult[k]; })
+    .sort(function (a, b) { return a.nombre.localeCompare(b.nombre) || b.fecha - a.fecha; })
+    .map(function (x) {
+      return [x.nombre, x.codigo, x.proveedor || "Sin proveedor", x.precio, x.medida, x.fecha ? new Date(x.fecha) : "",
+        x.familia, x.origen, Object.keys(x.bares).join(", ")];
+    });
+  let sh = central_().getSheetByName(SHEET_PRECIOS);
+  if (!sh) sh = central_().insertSheet(SHEET_PRECIOS);
+  sh.clear();
+  sh.getRange(1, 1, 1, PRECIOS_HEADERS.length).setValues([PRECIOS_HEADERS]).setFontWeight("bold");
+  if (filas.length) sh.getRange(2, 1, filas.length, PRECIOS_HEADERS.length).setValues(filas);
+  sh.setFrozenRows(1);
+  return filas.length;
+}
+
+function leerPrecios_() {
+  let sh = central_().getSheetByName(SHEET_PRECIOS);
+  if (!sh || sh.getLastRow() <= 1) {
+    if (!hojasCompras_().length) return [];
+    reconstruirPrecios_();
+    sh = central_().getSheetByName(SHEET_PRECIOS);
+  }
+  return sh.getDataRange().getValues().slice(1).filter(function (r) { return String(r[0]).trim(); }).map(function (r) {
+    return {
+      nombre: String(r[0]).trim(), codigo: String(r[1]).trim(), proveedor: String(r[2] || "Sin proveedor").trim(),
+      precio: num_(r[3]), medida: String(r[4] || ""), fecha: fechaMs_(r[5]), familia: String(r[6] || ""),
+      origen: String(r[7] || ""), bares: String(r[8] || "").split(",").map(norm_).filter(String)
+    };
+  });
+}
+
+function recalcularPrecios() {
+  const n = reconstruirPrecios_();
+  SpreadsheetApp.getUi().alert("Listo: " + n + " precios en la hoja «Precios».");
 }
 
 // { nombre en compras (normalizado): [productos del stock] } ("No es stock"
@@ -257,46 +362,84 @@ function leerEquivalencias_() {
   return out;
 }
 
+// "750 cc" → 0.75 (litros); "5 kg" → 5 (kilos).
+function medidaContenido_(cont) {
+  const m = String(cont || "").trim().toLowerCase().replace(",", ".").match(/^(\d+(?:\.\d+)?)\s*([a-z]*)/);
+  if (!m) return null;
+  const n = Number(m[1]), u = m[2];
+  if (!(n > 0)) return null;
+  if (["cc", "ml", "cm"].indexOf(u) >= 0) return { v: n / 1000, u: "l" };
+  if (["l", "lt", "lts", "litro", "litros"].indexOf(u) >= 0) return { v: n, u: "l" };
+  if (["g", "gr", "grs", "gramo", "gramos"].indexOf(u) >= 0) return { v: n / 1000, u: "kg" };
+  if (["kg", "kgs", "kilo", "kilos"].indexOf(u) >= 0) return { v: n, u: "kg" };
+  if (!u) return n >= 50 ? { v: n / 1000, u: "l" } : { v: n, u: "l" };
+  return null;
+}
+
+// Si la compra es por litro (o kilo) y el producto se cuenta en botellas
+// (o unidades), el precio de cada una es precio por litro × lo que trae.
+function precioPorUnidad_(p, prod) {
+  const med = norm_(p.medida);
+  const porLitro = /^lit/.test(med), porKilo = /^kilo/.test(med);
+  if (!porLitro && !porKilo) return p.precio;
+  if (/litro|kilo|gramo/i.test(prod.unidad || "")) return p.precio;
+  const c = medidaContenido_(prod.contenido);
+  if (!c || (porLitro && c.u !== "l") || (porKilo && c.u !== "kg")) return p.precio;
+  return Math.round(p.precio * c.v * 100) / 100;
+}
+
 // Para cada producto del catalogo del bar: el costo de la ultima compra,
 // sus proveedores (el mas reciente primero) y el ultimo costo de cada uno.
-function preciosDelCatalogo_(catalogo) {
+// Se busca por codigo (solo en las compras donde figura ese bar) y si no,
+// por nombre o por Equivalencias.
+function preciosDelCatalogo_(barNombre, catalogo) {
   const eq = leerEquivalencias_();
-  const porNom = {};
-  todasLasCompras_().forEach(function (c) {
-    const k = norm_(c.nombre);
+  const nb = norm_(barNombre);
+  const porNom = {}, porCod = {};
+  leerPrecios_().forEach(function (p) {
+    if (p.codigo && p.bares.indexOf(nb) >= 0) (porCod[p.codigo] = porCod[p.codigo] || []).push(p);
+    const k = norm_(p.nombre);
     if (eq[k] === NO_ES_STOCK) return;
     const keys = [k];
     (eq[k] || []).forEach(function (v) { if (keys.indexOf(norm_(v)) < 0) keys.push(norm_(v)); });
-    keys.forEach(function (x) { (porNom[x] = porNom[x] || []).push(c); });
+    keys.forEach(function (x) { (porNom[x] = porNom[x] || []).push(p); });
   });
   const out = {};
   catalogo.forEach(function (prod) {
-    const hits = (porNom[norm_(prod.nombre)] || []).slice().reverse();
+    let hits = ((prod.codigo && porCod[prod.codigo]) || porNom[norm_(prod.nombre)] || []).slice()
+      .sort(function (a, b) { return b.fecha - a.fecha; });
+    // Si hay compras con proveedor, no se mezclan las que no lo traen.
+    if (hits.some(function (h) { return h.proveedor && h.proveedor !== "Sin proveedor"; })) {
+      hits = hits.filter(function (h) { return h.proveedor && h.proveedor !== "Sin proveedor"; });
+    }
     const porProveedor = {}, provs = [];
     hits.forEach(function (h) {
       const v = h.proveedor || "Sin proveedor";
-      if (provs.indexOf(v) < 0) { provs.push(v); porProveedor[v] = h.costo; }
+      if (provs.indexOf(v) < 0) { provs.push(v); porProveedor[v] = precioPorUnidad_(h, prod); }
     });
-    out[prod.nombre] = { costo: hits.length ? hits[0].costo : null, proveedores: provs, porProveedor: porProveedor };
+    out[prod.nombre] = { costo: provs.length ? porProveedor[provs[0]] : null, proveedores: provs, porProveedor: porProveedor };
   });
   return out;
 }
 
-// Lo que aparece en las compras de este bar y no esta en su catalogo ni
-// en Equivalencias: para que el administrador diga que es.
+// Lo de barra que aparece en las compras de este bar y no esta en su
+// catalogo ni en Equivalencias: para que el administrador diga que es.
 function comprasNuevas_(barNombre, catalogo) {
   const eq = leerEquivalencias_();
-  const enCatalogo = {};
-  catalogo.forEach(function (p) { enCatalogo[norm_(p.nombre)] = true; });
-  const sh = hojasCompras_().filter(function (h) { return norm_(h.getName()) === norm_("Compras " + barNombre); })[0];
-  if (!sh) return [];
+  const nb = norm_(barNombre);
+  const enCatalogo = {}, codigos = {};
+  catalogo.forEach(function (p) { enCatalogo[norm_(p.nombre)] = true; if (p.codigo) codigos[p.codigo] = true; });
   const ult = {};
-  leerCompras_(sh).forEach(function (c) {
-    const k = norm_(c.nombre);
-    if (enCatalogo[k] || eq[k]) return;
-    if (!ult[k] || c.fecha >= ult[k].fecha) ult[k] = c;
+  leerPrecios_().forEach(function (p) {
+    const delBar = norm_(p.origen) === nb || p.bares.indexOf(nb) >= 0;
+    if (!delBar) return;
+    // Solo bebidas: en los reportes con Familia, la de barra.
+    if (p.familia ? !/barra/i.test(p.familia) : norm_(p.origen) !== nb) return;
+    const k = norm_(p.nombre);
+    if (enCatalogo[k] || eq[k] || (p.codigo && codigos[p.codigo])) return;
+    if (!ult[k] || p.fecha >= ult[k].fecha) ult[k] = p;
   });
-  return Object.keys(ult).map(function (k) { return { nombre: ult[k].nombre, proveedor: ult[k].proveedor, costo: ult[k].costo }; })
+  return Object.keys(ult).map(function (k) { return { nombre: ult[k].nombre, proveedor: ult[k].proveedor, costo: ult[k].precio }; })
     .sort(function (a, b) { return a.nombre.localeCompare(b.nombre); });
 }
 
@@ -305,9 +448,11 @@ function onOpen() {
   hojaCentral_(SHEET_BARES, BARES_HEADERS);
   hojaCentral_(SHEET_PERSONAS, PERSONAS_HEADERS);
   hojaCentral_(SHEET_EQUIV, EQUIV_HEADERS);
+  hojaPedidosCentral_();
   SpreadsheetApp.getUi().createMenu("Stock bares")
     .addItem("Armar links de instalación", "armarLinks")
     .addItem("Cargar compras (Excel de Cuccina)", "cargarComprasVentana")
+    .addItem("Recalcular precios", "recalcularPrecios")
     .addItem("Cambiar la dirección del código", "cambiarDireccion")
     .addToUi();
 }
@@ -346,10 +491,14 @@ function cargarCompras(destino, filas, reemplazar) {
     }
     return fila;
   });
-  const titulos = datos[0].map(norm_);
-  if (!titulos.some(function (t) { return /^descripcion$|^denominacion$|^producto$|^nombre$|^articulo$/.test(t); })) {
-    throw new Error("No encuentro la columna Descripción (o Denominación) en la primera fila de esa hoja. ¿Es el reporte de compras?");
+  // La fila de titulos puede no ser la primera (el reporte de Felicidad e
+  // Industrias trae dos renglones de titulo arriba): lo de arriba se saca.
+  let fila0 = -1;
+  for (let i = 0; i < Math.min(datos.length, 15); i++) if (columnasCompras_(datos[i])) { fila0 = i; break; }
+  if (fila0 < 0) {
+    throw new Error("No encuentro la columna Descripción (o Denominación) en los títulos de esa hoja. ¿Es el reporte de compras?");
   }
+  datos.splice(0, fila0);
   const nombre = "Compras " + destino;
   let sh = hojasCompras_().filter(function (h) { return norm_(h.getName()) === norm_(nombre); })[0];
   if (!sh) sh = central_().insertSheet(nombre);
@@ -357,7 +506,7 @@ function cargarCompras(destino, filas, reemplazar) {
     return r.map(function (v) { return isDate_(v) ? Utilities.formatDate(v, Session.getScriptTimeZone(), "yyyy-MM-dd") : String(v).trim(); }).join("|");
   };
   let agregar = datos;
-  let repetidos = 0;
+  let repetidos = 0, titulosRepetidos = 0;
   if (reemplazar || sh.getLastRow() === 0) {
     sh.clear();
   } else {
@@ -370,14 +519,19 @@ function cargarCompras(destino, filas, reemplazar) {
       hay[k] = true;
       return true;
     });
+    // Si lo que ya habia tiene otros titulos (otro formato de reporte), se
+    // repiten los titulos antes de lo nuevo para que se lea bien.
+    const ultimosTitulos = sh.getDataRange().getValues().filter(function (r) { return columnasCompras_(r); }).pop();
+    if (agregar.length && (!ultimosTitulos || clave(ultimosTitulos.slice(0, ancho)) !== clave(datos[0]))) { agregar.unshift(datos[0]); titulosRepetidos = 1; }
   }
   if (agregar.length) {
     if (sh.getMaxColumns() < ancho) sh.insertColumnsAfter(sh.getMaxColumns(), ancho - sh.getMaxColumns());
     sh.getRange(sh.getLastRow() + 1, 1, agregar.length, ancho).setValues(agregar);
   }
   if (reemplazar || agregar === datos) sh.setFrozenRows(1);
-  const nuevos = agregar === datos ? datos.length - 1 : agregar.length;
-  return { hoja: nombre, agregados: nuevos, repetidos: repetidos };
+  const nuevos = agregar === datos ? datos.length - 1 : agregar.length - titulosRepetidos;
+  const precios = reconstruirPrecios_();
+  return { hoja: nombre, agregados: nuevos, repetidos: repetidos, precios: precios };
 }
 
 const VENTANA_COMPRAS = '<!DOCTYPE html><html><head><meta charset="utf-8"><base target="_top">' +
@@ -410,7 +564,7 @@ const VENTANA_COMPRAS = '<!DOCTYPE html><html><head><meta charset="utf-8"><base 
   'var filas=XLSX.utils.sheet_to_json(hoja,{header:1,raw:true,defval:""}).map(function(r){return r.map(function(v){return v instanceof Date?fecha(v):v;});})' +
   '.filter(function(r){return r.some(function(v){return v!=="";});});' +
   'var b=this;b.disabled=true;msg("Cargando "+(filas.length-1)+" renglones…");' +
-  'google.script.run.withSuccessHandler(function(res){b.disabled=false;msg("Listo: "+res.agregados+" renglones nuevos en la hoja «"+res.hoja+"»"+(res.repetidos?" ("+res.repetidos+" ya estaban y no se repitieron)":"")+". La app ya toma los precios nuevos.","ok");})' +
+  'google.script.run.withSuccessHandler(function(res){b.disabled=false;msg("Listo: "+res.agregados+" renglones nuevos en la hoja «"+res.hoja+"»"+(res.repetidos?" ("+res.repetidos+" ya estaban y no se repitieron)":"")+". La hoja «Precios» quedó con "+res.precios+" precios y la app ya los toma.","ok");})' +
   '.withFailureHandler(function(err){b.disabled=false;msg("No se cargó: "+err.message,"err");})' +
   '.cargarCompras(d.value,filas,document.getElementById("reemplazar").checked);});' +
   '</script></body></html>';
@@ -520,7 +674,9 @@ function readCatalogo_() {
       grupo: /^top\s*10$/i.test(txt(r[2])) ? "Top 10" : "Resto",
       unidad: txt(r[3]),
       familia: txt(r[4]),
-      contenido: txt(r[5])
+      contenido: txt(r[5]),
+      // Columna 7 (opcional): el codigo de Cuccina, para buscar el precio.
+      codigo: txt(r[6])
     };
   });
 }
@@ -547,6 +703,69 @@ function readCierres_() {
 function fechasCerradas_() {
   const out = {};
   readCierres_().forEach(function (c) { out[c.fecha] = true; });
+  return out;
+}
+
+// ------------------------------------------------------------
+// Pedidos: todos van a la hoja "Pedidos" de la planilla central, un renglon
+// por producto, con una columna Estado (En espera / Recibido / Cancelado)
+// que pinta el renglon de amarillo, verde o rojo. Tiene filtro puesto.
+// ------------------------------------------------------------
+const PEDIDOS_CENTRAL_HEADERS = ["Fecha", "Bar", "Pedido", "Categoría", "Proveedor", "Producto", "Cantidad", "Unidad",
+  "Precio", "Subtotal", "Persona", "Nota", "Cargado", "Estado", "ID"];
+const ESTADOS = ["En espera", "Recibido", "Cancelado"];
+const COL_ESTADO = 14, COL_ID = 15;
+
+function hojaPedidosCentral_() {
+  const c = central_();
+  let sh = c.getSheetByName(SHEET_PEDIDOS);
+  if (sh) return sh;
+  sh = c.insertSheet(SHEET_PEDIDOS);
+  const n = PEDIDOS_CENTRAL_HEADERS.length;
+  sh.getRange(1, 1, 1, n).setValues([PEDIDOS_CENTRAL_HEADERS]).setFontWeight("bold");
+  sh.setFrozenRows(1);
+  if (sh.getMaxRows() < 3000) sh.insertRowsAfter(sh.getMaxRows(), 3000 - sh.getMaxRows());
+  const filas = sh.getMaxRows() - 1;
+  sh.getRange(2, COL_ESTADO, filas, 1).setDataValidation(
+    SpreadsheetApp.newDataValidation().requireValueInList(ESTADOS, true).setAllowInvalid(false).build());
+  const todo = sh.getRange(2, 1, filas, n);
+  const regla = function (estado, color) {
+    return SpreadsheetApp.newConditionalFormatRule().whenFormulaSatisfied('=$N2="' + estado + '"')
+      .setBackground(color).setRanges([todo]).build();
+  };
+  sh.setConditionalFormatRules([regla("Recibido", "#D9EAD3"), regla("Cancelado", "#F4CCCC"), regla("En espera", "#FFF2CC")]);
+  sh.getRange(1, 1, sh.getMaxRows(), n).createFilter();
+  return sh;
+}
+
+function filaPedidoCentral_(p, bar) {
+  return [p.fecha, bar, p.pedido || p.id, p.categoria || "", p.proveedor || "", p.producto, p.cantidad,
+    p.unidad || "", p.precio === null || p.precio === undefined ? "" : p.precio,
+    p.subtotal === null || p.subtotal === undefined ? "" : p.subtotal, p.persona || "", p.nota || "", p.cargado || "",
+    "En espera", p.id];
+}
+
+// Los pedidos de un bar: los de la central y, si quedaron, los viejos de la
+// planilla del bar.
+function readPedidosDelBar_(barNombre) {
+  const out = [], vistos = {};
+  const sh = central_().getSheetByName(SHEET_PEDIDOS);
+  if (sh && sh.getLastRow() > 1) {
+    const nb = norm_(barNombre);
+    sh.getRange(2, 1, sh.getLastRow() - 1, PEDIDOS_CENTRAL_HEADERS.length).getValues()
+      .filter(function (r) { return String(r[COL_ID - 1]) !== "" && norm_(r[1]) === nb; })
+      .slice(-PEDIDOS_A_LA_APP).forEach(function (r) {
+        vistos[String(r[COL_ID - 1])] = true;
+        out.push({
+          id: String(r[COL_ID - 1]), fecha: formatDate_(r[0]), pedido: String(r[2] || r[COL_ID - 1]), categoria: cat_(r[3]),
+          proveedor: String(r[4] || ""), producto: String(r[5]), cantidad: num_(r[6]), unidad: String(r[7] || ""),
+          precio: r[8] === "" ? null : num_(r[8]), subtotal: r[9] === "" ? null : num_(r[9]),
+          persona: String(r[10] || ""), nota: String(r[11] || ""), cargado: formatDateTime_(r[12]),
+          estado: String(r[COL_ESTADO - 1] || "En espera")
+        });
+      });
+  }
+  readPedidos_().forEach(function (p) { if (!vistos[p.id]) out.push(p); });
   return out;
 }
 
@@ -722,6 +941,15 @@ function abrirBar_(yo, barNombre) {
 }
 
 function doGet(e) {
+  try {
+    return doGet_(e);
+  } catch (err) {
+    // Que la app pueda mostrar el motivo en vez de "sin conexion".
+    return jsonOut_({ error: "servidor", detalle: String(err && err.message || err) });
+  }
+}
+
+function doGet_(e) {
   const p = (e && e.parameter) || {};
   const yo = quien_(p.clave);
   if (!yo) return jsonOut_({ error: "clave" });
@@ -740,8 +968,8 @@ function doGet(e) {
       unidades: readLista_("unidades"),
       cantidades: readLista_("cantidades"),
       cierres: readCierres_(),
-      pedidos: readPedidos_(),
-      precios: preciosDelCatalogo_(catalogo),
+      pedidos: readPedidosDelBar_(bar.nombre),
+      precios: preciosDelCatalogo_(bar.nombre, catalogo),
       whatsapp: bar.whatsapp,
       compras_nuevas: yo.rol === ROL_ADMIN ? comprasNuevas_(bar.nombre, catalogo) : [],
       planilla: yo.rol === ROL_ADMIN ? ss_().getUrl() : ""
@@ -774,7 +1002,8 @@ function doPost(e) {
     return jsonOut_({ ok: false, error: "planilla ocupada" });
   }
   try {
-    if (!abrirBar_(yo, body.bar)) return jsonOut_({ ok: false, error: "sin acceso" });
+    const barAbierto = abrirBar_(yo, body.bar);
+    if (!barAbierto) return jsonOut_({ ok: false, error: "sin acceso" });
     // Lo que se guarda queda a nombre de quien es de verdad (por su clave).
     const persona = yo.persona;
     // La app reintenta los envios que no pudo confirmar, asi que cada
@@ -796,13 +1025,14 @@ function doPost(e) {
       }
 
     } else if (action === "pedido_add") {
-      const sh = getSheet_(SHEET_PEDIDOS, PEDIDO_HEADERS);
+      // Va a la hoja Pedidos de la planilla central (no a la del bar).
+      const sh = hojaPedidosCentral_();
       const existentes = {};
-      readRows_(SHEET_PEDIDOS).forEach(function (r) { existentes[String(r[0])] = true; });
+      if (sh.getLastRow() > 1) sh.getRange(2, COL_ID, sh.getLastRow() - 1, 1).getValues().forEach(function (r) { existentes[String(r[0])] = true; });
       const nuevas = (body.items || [])
         .filter(function (p) { return p && p.id && !existentes[String(p.id)]; })
-        .map(function (p) { p.persona = persona; return pedidoToRow_(p); });
-      if (nuevas.length) sh.getRange(sh.getLastRow() + 1, 1, nuevas.length, PEDIDO_HEADERS.length).setValues(nuevas);
+        .map(function (p) { p.persona = persona; return filaPedidoCentral_(p, barAbierto.nombre); });
+      if (nuevas.length) sh.getRange(sh.getLastRow() + 1, 1, nuevas.length, PEDIDOS_CENTRAL_HEADERS.length).setValues(nuevas);
 
     } else if (action === "equiv_set") {
       // "Este nombre de las compras es tal producto del stock" (o "No es stock").

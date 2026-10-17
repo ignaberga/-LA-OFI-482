@@ -96,6 +96,14 @@
   .estado { font-size: 11px; font-weight: 800; letter-spacing: 0.5px; padding: 4px 9px; border-radius: 20px; white-space: nowrap; }
   .estado.abierto { background: var(--gold-bg); color: var(--gold); }
   .estado.cerrado { background: var(--green-bg); color: var(--green); }
+  .estado.cancelado { background: var(--rust-bg); color: var(--rust); }
+  .pedido-ok { display: none; margin: 0 20px 16px; border-radius: var(--radius); padding: 14px 16px; font-size: 14px; line-height: 1.4; }
+  .pedido-ok.show { display: block; }
+  .pedido-ok strong { display: block; font-size: 17px; margin-bottom: 2px; }
+  .pedido-ok.ok { background: var(--green-bg); color: var(--green); border: 1px solid var(--green); }
+  .pedido-ok.enviando { background: var(--blue-bg); color: var(--blue); border: 1px solid var(--blue); }
+  .pedido-ok.espera { background: var(--gold-bg); color: var(--gold); border: 1px solid var(--gold); }
+  .actualizando { font-size: 12px; font-weight: 600; color: var(--ink-soft); margin-top: 4px; min-height: 15px; }
   .day-sub { font-size: 12px; font-weight: 700; color: var(--ink-soft); margin: 10px 0 2px; }
   .day-sub:first-child { margin-top: 0; }
   .g-line.falta span { color: var(--ink-soft); font-weight: 400; font-style: italic; }
@@ -253,6 +261,7 @@
       <div class="name" id="appName">Stock</div>
       <div class="sub" id="barLabel"></div>
       <select id="barSelect" style="display:none" aria-label="Elegir bar"></select>
+      <div class="actualizando" id="actualizando"></div>
     </div>
     <span class="who-chip" id="whoChip" style="display:none"></span>
   </header>
@@ -267,8 +276,9 @@
 
   <!-- PEDIDOS -->
   <div id="tab-pedidos" class="tab-panel">
+    <div class="pedido-ok" id="pedidoOk"></div>
     <div class="aviso" id="sinPrecioAviso" style="display:none"></div>
-    <button class="big-btn pedido" id="openPedido">Hacer pedido<small>A uno o varios proveedores, para que lo apruebe el dueño</small></button>
+    <button class="big-btn pedido" id="openPedido">Hacer pedido<small>A uno o varios proveedores</small></button>
     <div class="section-title">Pedidos hechos</div>
     <div class="groups" id="pedidoList"></div>
     <button class="btn-more" id="pedidoMore" style="display:none">Ver más</button>
@@ -509,13 +519,13 @@
       <div id="pdStep4" style="display:none">
         <div class="info-card" id="pdResumen" style="margin:0 0 14px;"></div>
         <div class="field">
-          <label>Nota para el dueño (opcional)</label>
+          <label>Nota (opcional)</label>
           <textarea id="pdNota" placeholder="Ej: es para el fin de semana largo"></textarea>
         </div>
         <div class="err-msg" id="pdErr"></div>
         <div class="modal-actions">
           <button class="btn-cancel" data-pdback="2">‹ Seguir agregando</button>
-          <button class="btn-save" id="pdEnviar">Enviar al dueño</button>
+          <button class="btn-save" id="pdEnviar">Enviar pedido</button>
         </div>
       </div>
     </div>
@@ -550,6 +560,9 @@
 // AJUSTES DEL PROYECTO
 // ============================================================
 const APP_NAME = "Stock";
+// Versión publicada. Tiene que ser igual a la de stockbares/version.json:
+// si el archivo dice otra, la app se recarga sola con la versión nueva.
+const APP_VERSION = "2026-10-17.1";
 // Quiénes usan la app y qué puede hacer cada uno.
 //   cargar: carga y corrige el stock de un día mientras está abierto.
 //   cerrar: cierra el stock de un día (después nadie lo puede cambiar).
@@ -724,8 +737,6 @@ let cierres = [];
 let pedidos = [];
 // Precio y proveedores de cada producto: { nombre: { costo, proveedores } }.
 let precios = {};
-// WhatsApp del dueño del bar, a quien le llegan los pedidos para aprobar.
-let whatsappDueno = "";
 // Lo que aparece en las compras del bar y no está en el stock (solo administrador).
 let comprasNuevas = [];
 
@@ -734,7 +745,7 @@ function syncKey(barName) { return KEY_PREFIX + "bar_" + slug(barName) + "_ultim
 
 function loadLocalCache() {
   conteos = []; productos = []; UNITS = [...DEFAULT_UNITS]; CANTS = [...DEFAULT_CANTS]; planillaUrl = ""; cierres = [];
-  pedidos = []; precios = {}; whatsappDueno = ""; comprasNuevas = [];
+  pedidos = []; precios = {}; comprasNuevas = [];
   if (!curBarName) return;
   const c = lsJson(cacheKey(curBarName), null);
   if (!c) return;
@@ -746,14 +757,13 @@ function loadLocalCache() {
   if (Array.isArray(c.cierres)) cierres = c.cierres;
   if (Array.isArray(c.pedidos)) pedidos = c.pedidos;
   if (c.precios && typeof c.precios === "object") precios = c.precios;
-  if (typeof c.whatsapp === "string") whatsappDueno = c.whatsapp;
   if (Array.isArray(c.compras_nuevas)) comprasNuevas = c.compras_nuevas;
 }
 
 function saveLocalCache() {
   if (!curBarName) return;
   lsSet(cacheKey(curBarName), JSON.stringify({ conteos, productos, unidades: UNITS, cantidades: CANTS, planilla: planillaUrl, cierres,
-    pedidos, precios, whatsapp: whatsappDueno, compras_nuevas: comprasNuevas }));
+    pedidos, precios, compras_nuevas: comprasNuevas }));
 }
 
 // ============================================================
@@ -777,6 +787,7 @@ function queueChange(action, payload) {
   saveOutbox();
   renderEverything();
   flushOutbox();
+  return op;
 }
 
 function sameProduct(a, b) {
@@ -907,7 +918,16 @@ let syncProblem = "";
 let fetchSeq = 0;
 
 // Lee todo el bar actual desde la planilla.
+let syncDetalle = "";
+function marcarActualizando(si) {
+  const el = document.getElementById("actualizando");
+  if (el) el.textContent = si ? "Actualizando…" : "";
+}
 async function fetchAllFromSheet(otraVez) {
+  marcarActualizando(true);
+  try { await fetchAllFromSheet_(otraVez); } finally { marcarActualizando(false); }
+}
+async function fetchAllFromSheet_(otraVez) {
   // Con la planilla central y sin bares todavía: se pregunta quién es.
   if (central && !curBar()) {
     try {
@@ -948,6 +968,7 @@ async function fetchAllFromSheet(otraVez) {
     // conserva lo que hay en el celular (nunca se vacía la app).
     if (!data || !Array.isArray(data.conteos) || !Array.isArray(data.productos)) {
       syncProblem = "script";
+      syncDetalle = data && data.detalle ? String(data.detalle) : data && data.error ? String(data.error) : "";
       renderEverything();
       return;
     }
@@ -966,7 +987,6 @@ async function fetchAllFromSheet(otraVez) {
     cierres = Array.isArray(data.cierres) ? data.cierres : [];
     if (Array.isArray(data.pedidos)) pedidos = data.pedidos;
     if (data.precios && typeof data.precios === "object") precios = data.precios;
-    if (typeof data.whatsapp === "string") whatsappDueno = data.whatsapp;
     comprasNuevas = Array.isArray(data.compras_nuevas) ? data.compras_nuevas : [];
     applyOutboxLocally();
     saveLocalCache();
@@ -1274,7 +1294,8 @@ function renderSyncState() {
       (uno ? "Está guardada en este celular y se manda sola" : "Están guardadas en este celular y se mandan solas") + " a la planilla cuando haya señal.";
   } else if (syncProblem === "script") {
     cls = "alert";
-    html = "<strong>La planilla contestó con un error</strong>Se muestra lo guardado en este celular y no se perdió nada. Avisale a Ignacio.";
+    html = "<strong>La planilla contestó con un error</strong>Se muestra lo guardado en este celular y no se perdió nada. Avisale a Ignacio" +
+      (syncDetalle ? " y pasale este mensaje: «" + esc(syncDetalle) + "»" : "") + ".";
   } else if (syncProblem === "red") {
     cls = "wait";
     html = "<strong>Sin conexión con la planilla</strong>Se muestra lo último guardado en este celular. Podés seguir cargando: se manda solo cuando vuelva la señal.";
@@ -1299,7 +1320,7 @@ function noAccessHtml() {
   if (central && syncProblem === "clave") return "<strong>Tu link ya no funciona</strong>Pedile a Ignacio un link de instalación nuevo.";
   if (central && sinBares) return "<strong>Tu usuario no tiene ningún bar asignado</strong>Avisale a Ignacio para que te sume en la planilla central.";
   if (central) return "<strong>Conectando con la planilla…</strong>La primera vez hace falta señal. Si tarda, revisá la conexión y volvé a abrir la app.";
-  return "<strong>Este celular todavía no está conectado a ningún bar</strong>Abrí el link de instalación que te pasaron por WhatsApp y, desde esa página, agregá la app a la pantalla de inicio.";
+  return "<strong>Este celular todavía no está conectado a ningún bar</strong>Abrí el link de instalación que te pasaron y, desde esa página, agregá la app a la pantalla de inicio.";
 }
 
 function renderEverything() {
@@ -1426,7 +1447,7 @@ function renderWizard() {
     const c = document.getElementById("wGrupos");
     c.innerHTML = PARTES.map(g => {
       const av = avance(wFecha, wCat, g);
-      const sub = !av.total ? "No hay productos" : g === "Top 10" ? av.total + (av.total === 1 ? " producto" : " productos") + " · recuento rápido"
+      const sub = !av.total ? (g === "Top 10" && productosDe(wCat).length ? "Todavía no hay Top 10: se marcan en Config" : "No hay productos") : g === "Top 10" ? av.total + (av.total === 1 ? " producto" : " productos") + " · recuento rápido"
         : "Todos (" + av.total + "), por familia · fin de mes";
       return '<button class="choice ' + catCls(wCat) + '" data-grupo="' + esc(g) + '"' + (av.total ? "" : " disabled") + '><span>' + esc(g) +
         '<small>' + sub + '</small></span>' + hechoHtml(av) + '</button>';
@@ -1666,7 +1687,7 @@ document.getElementById("pDelete").addEventListener("click", () => {
 // ============================================================
 // Un pedido puede llevar varios proveedores. Mientras se arma queda
 // guardado en el celular (borrador, uno por Barra y otro por Cocina);
-// al enviarlo se guarda en la hoja Pedidos del bar y se abre WhatsApp
+// al enviarlo se guarda en la hoja Pedidos de la planilla central
 // con un solo mensaje para que el dueño lo apruebe.
 const SIN_PROV = "Sin proveedor";
 const SEP = "\u0001";
@@ -1706,7 +1727,7 @@ function proveedoresDe(cat) {
 }
 function productosDeProv(cat, prov) { return productosDe(cat).filter(p => proveedoresDeProd(p.nombre).includes(prov)); }
 
-function fmtPesos(n) { return "$ " + Math.round(Number(n)).toLocaleString("es-AR"); }
+function fmtPesos(n) { return "$\u00a0" + Math.round(Number(n)).toLocaleString("es-AR"); }
 
 // Los renglones del borrador, en el orden de los proveedores y del catálogo.
 function lineasBorrador(cat) {
@@ -1888,34 +1909,9 @@ function renderPdResumen() {
   const lineas = lineasBorrador(pdCat);
   const t = totalDe(lineas);
   document.getElementById("pdResumen").innerHTML = lineasHtml(lineas) +
-    '<div class="pd-total" style="margin:12px 0 0;">' + totalHtml(lineas) + '</div>' +
-    (whatsappDueno ? "" : '<div class="help-text" style="margin:10px 0 0;">Este bar todavía no tiene cargado el WhatsApp del dueño: al enviar vas a elegir a quién mandarlo.</div>');
+    '<div class="pd-total" style="margin:12px 0 0;">' + totalHtml(lineas) + '</div>';
   document.getElementById("pdEnviar").disabled = !t.n;
   document.getElementById("pdErr").style.display = "none";
-}
-
-// El mensaje de WhatsApp: un solo mensaje con todos los proveedores.
-function mensajePedido(items) {
-  const it = items[0];
-  const out = ["*Pedido " + curBarName + " · " + it.categoria + "*", "Fecha: " + dayLabelLong(it.fecha), "Lo arma: " + it.persona, ""];
-  porProveedor(items).forEach(g => {
-    const t = totalDe(g.lineas);
-    out.push("*" + g.proveedor + "*" + (t.total ? " (" + fmtPesos(t.total) + ")" : ""));
-    g.lineas.forEach(l => out.push("• " + lineaTexto(l) + " – " + (l.subtotal === null ? "sin precio" : fmtPesos(l.subtotal))));
-    out.push("");
-  });
-  const t = totalDe(items);
-  out.push("*Total: " + fmtPesos(t.total) + "*");
-  if (t.sinPrecio) out.push("(" + (t.sinPrecio === 1 ? "1 producto sin precio, no está" : t.sinPrecio + " productos sin precio, no están") + " en el total)");
-  if (it.nota) out.push("Nota: " + it.nota);
-  out.push("", "¿Lo aprobás?");
-  return out.join("\n");
-}
-
-function abrirWhatsApp(texto) {
-  const url = "https://wa.me/" + (whatsappDueno || "") + "?text=" + encodeURIComponent(texto);
-  const w = window.open(url, "_blank");
-  if (!w) location.href = url;
 }
 
 document.getElementById("pdEnviar").addEventListener("click", () => {
@@ -1929,15 +1925,32 @@ document.getElementById("pdEnviar").addEventListener("click", () => {
   const nota = document.getElementById("pdNota").value.trim();
   const items = lineas.map((l, i) => Object.assign({ id: pedido + "-" + i, pedido: pedido, fecha: b.fecha, categoria: pdCat }, l,
     { persona: phoneOwner, nota: nota, cargado: cargado }));
-  // WhatsApp se abre primero (tiene que ser apenas se toca el botón).
-  abrirWhatsApp(mensajePedido(items));
   guardarBorrador(pdCat, null);
   document.getElementById("pdNota").value = "";
   closeOverlay("pedOverlay");
   showTab("pedidos");
-  queueChange("pedido_add", { items: items });
-  showToast("Pedido guardado ✓");
+  const op = queueChange("pedido_add", { items: items });
+  avisarEnvio(op);
 });
+
+// Después de enviar: espera a que la planilla confirme y lo dice en grande.
+// Sin señal queda guardado en el celular y se manda solo.
+function avisarEnvio(op) {
+  const box = document.getElementById("pedidoOk");
+  const mostrar = (cls, html) => { box.className = "pedido-ok show " + cls; box.innerHTML = html; };
+  mostrar("enviando", "Enviando el pedido…");
+  const inicio = Date.now();
+  const mirar = () => {
+    const pendiente = outbox.some(o => o.opId === op.opId);
+    if (!pendiente) { mostrar("ok", "<strong>✓ Pedido realizado con éxito</strong>Ya está en la planilla central."); setTimeout(() => box.className = "pedido-ok", 6000); return; }
+    if (!flushing && Date.now() - inicio > 3000 || Date.now() - inicio > 20000) {
+      mostrar("espera", "<strong>Pedido guardado en el celular</strong>No hay conexión con la planilla: se manda solo cuando vuelva la señal.");
+      return;
+    }
+    setTimeout(mirar, 400);
+  };
+  setTimeout(mirar, 400);
+}
 
 document.querySelectorAll("#pedOverlay [data-pdback]").forEach(x => x.addEventListener("click", () => goPd(Number(x.getAttribute("data-pdback")))));
 document.querySelectorAll("#pedOverlay [data-pdrevisar]").forEach(x => x.addEventListener("click", () => {
@@ -1946,6 +1959,16 @@ document.querySelectorAll("#pedOverlay [data-pdrevisar]").forEach(x => x.addEven
 }));
 document.querySelectorAll("#pedOverlay [data-pdclose]").forEach(x => x.addEventListener("click", () => closeOverlay("pedOverlay")));
 document.getElementById("openPedido").addEventListener("click", openPedido);
+
+// El estado lo pone Noel en la hoja Pedidos de la central (por renglón).
+function estadoPedido(items) {
+  const est = items.map(x => String(x.estado || "En espera"));
+  if (outbox.some(o => o.action === "pedido_add" && o.payload.items.some(x => x.pedido === items[0].pedido))) return { txt: "SIN ENVIAR", cls: "abierto" };
+  if (est.every(e => /recib/i.test(e))) return { txt: "RECIBIDO", cls: "cerrado" };
+  if (est.every(e => /cancel/i.test(e))) return { txt: "CANCELADO", cls: "cancelado" };
+  if (est.some(e => /recib/i.test(e))) return { txt: "RECIBIDO EN PARTE", cls: "abierto" };
+  return { txt: "EN ESPERA", cls: "abierto" };
+}
 
 // Pedidos hechos: una tarjeta por pedido, el más nuevo primero.
 let pedidoLimit = 15;
@@ -1977,14 +2000,13 @@ function renderPedidos() {
     const it = items[0];
     const t = totalDe(items);
     const provs = porProveedor(items).length;
+    const est = estadoPedido(items);
     return '<details class="group"><summary><div class="g-left"><div class="g-title">Pedido del ' + esc(dayLabel(it.fecha)) + ' · ' + esc(it.categoria) + '</div>' +
-      '<div class="g-meta">' + (provs === 1 ? "1 proveedor" : provs + " proveedores") + ' · ' + esc(it.persona) + '</div></div>' +
-      '<span class="g-count">' + fmtPesos(t.total) + '</span></summary><div class="g-body">' + lineasHtml(items) +
+      '<div class="g-meta">' + (provs === 1 ? "1 proveedor" : provs + " proveedores") + ' · ' + esc(it.persona) + ' · ' + fmtPesos(t.total) + '</div></div>' +
+      '<span class="estado ' + est.cls + '">' + esc(est.txt) + '</span></summary><div class="g-body">' + lineasHtml(items) +
       (t.sinPrecio ? '<div class="g-extra">' + (t.sinPrecio === 1 ? "1 producto sin precio, no está" : t.sinPrecio + " productos sin precio, no están") + ' en el total.</div>' : "") +
-      (it.nota ? '<div class="g-extra">Nota: ' + esc(it.nota) + '</div>' : "") +
-      '<button class="btn-wa" data-reenviar="' + i + '">Reenviar por WhatsApp</button></div></details>';
+      (it.nota ? '<div class="g-extra">Nota: ' + esc(it.nota) + '</div>' : "") + '</div></details>';
   }).join("");
-  c.querySelectorAll("[data-reenviar]").forEach(x => x.addEventListener("click", () => abrirWhatsApp(mensajePedido(todos[Number(x.getAttribute("data-reenviar"))]))));
   document.getElementById("pedidoMore").style.display = todos.length > pedidoLimit ? "block" : "none";
 }
 document.getElementById("pedidoMore").addEventListener("click", () => { pedidoLimit += 15; renderPedidos(); });
@@ -2085,7 +2107,22 @@ document.querySelectorAll("#whoToggle [data-who]").forEach(b => b.addEventListen
 // ============================================================
 // ARRANQUE
 // ============================================================
+// Si se publicó una versión nueva, se recarga sola (una vez por versión).
+async function revisarVersion() {
+  try {
+    const res = await fetch("version.json?t=" + Date.now(), { cache: "no-store" });
+    const v = (await res.json()).version;
+    if (!v || v === APP_VERSION) return;
+    const k = KEY_PREFIX + "recargado_" + v;
+    try { if (sessionStorage.getItem(k)) return; sessionStorage.setItem(k, "1"); } catch (e) {}
+    location.replace(location.pathname + "?v=" + encodeURIComponent(v) + location.hash);
+  } catch (e) {
+    // Sin señal: sigue con la versión que tiene.
+  }
+}
+
 async function start() {
+  revisarVersion();
   loadLocalCache();
   applyOutboxLocally();
   renderEverything();
@@ -2095,7 +2132,7 @@ async function start() {
   setInterval(fetchAllFromSheet, 300000);
   setInterval(flushOutbox, 30000);
   window.addEventListener("online", syncNow);
-  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") syncNow(); });
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") { revisarVersion(); syncNow(); } });
 }
 start();
 </script>
