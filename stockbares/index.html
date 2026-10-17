@@ -289,6 +289,7 @@
     <div class="section-title" style="padding-top:4px;">Todos los días</div>
     <div class="groups" id="historyList"></div>
     <button class="btn-more" id="historyMore" style="display:none">Ver más</button>
+    <div class="help-text" id="historyViejos" style="display:none;padding:12px 20px 0;"></div>
   </div>
 
   <!-- CONFIG -->
@@ -562,7 +563,7 @@
 const APP_NAME = "Stock";
 // Versión publicada. Tiene que ser igual a la de stockbares/version.json:
 // si el archivo dice otra, la app se recarga sola con la versión nueva.
-const APP_VERSION = "2026-10-17.1";
+const APP_VERSION = "2026-10-17.2";
 // Quiénes usan la app y qué puede hacer cada uno.
 //   cargar: carga y corrige el stock de un día mientras está abierto.
 //   cerrar: cierra el stock de un día (después nadie lo puede cambiar).
@@ -739,16 +740,20 @@ let pedidos = [];
 let precios = {};
 // Lo que aparece en las compras del bar y no está en el stock (solo administrador).
 let comprasNuevas = [];
+// La planilla manda solo los últimos días de stock: este es el más viejo
+// que mandó ("" = mandó todos). Lo de antes queda en la planilla.
+let conteosDesde = "";
 
 function cacheKey(barName) { return KEY_PREFIX + "bar_" + slug(barName) + "_cache_v2"; }
 function syncKey(barName) { return KEY_PREFIX + "bar_" + slug(barName) + "_ultima_sync"; }
 
 function loadLocalCache() {
   conteos = []; productos = []; UNITS = [...DEFAULT_UNITS]; CANTS = [...DEFAULT_CANTS]; planillaUrl = ""; cierres = [];
-  pedidos = []; precios = {}; comprasNuevas = [];
+  pedidos = []; precios = {}; comprasNuevas = []; conteosDesde = ""; cacheGuardado = "";
   if (!curBarName) return;
   const c = lsJson(cacheKey(curBarName), null);
   if (!c) return;
+  if (typeof c.desde === "string") conteosDesde = c.desde;
   if (Array.isArray(c.conteos)) conteos = normData(c.conteos);
   if (Array.isArray(c.productos)) productos = normData(c.productos);
   if (Array.isArray(c.unidades) && c.unidades.length) UNITS = c.unidades;
@@ -758,12 +763,23 @@ function loadLocalCache() {
   if (Array.isArray(c.pedidos)) pedidos = c.pedidos;
   if (c.precios && typeof c.precios === "object") precios = c.precios;
   if (Array.isArray(c.compras_nuevas)) comprasNuevas = c.compras_nuevas;
+  cacheGuardado = estadoJson();
 }
 
+// Lo que se guarda en el celular de un bar. Si no cambió nada, no se vuelve
+// a guardar ni a dibujar (así la pantalla no salta).
+let cacheGuardado = "";
+function estadoJson() {
+  return JSON.stringify({ conteos, productos, unidades: UNITS, cantidades: CANTS, planilla: planillaUrl, cierres,
+    pedidos, precios, compras_nuevas: comprasNuevas, desde: conteosDesde });
+}
 function saveLocalCache() {
-  if (!curBarName) return;
-  lsSet(cacheKey(curBarName), JSON.stringify({ conteos, productos, unidades: UNITS, cantidades: CANTS, planilla: planillaUrl, cierres,
-    pedidos, precios, compras_nuevas: comprasNuevas }));
+  if (!curBarName) return false;
+  const s = estadoJson();
+  if (s === cacheGuardado) return false;
+  cacheGuardado = s;
+  lsSet(cacheKey(curBarName), s);
+  return true;
 }
 
 // ============================================================
@@ -780,13 +796,15 @@ function newId() { return Date.now() + "-" + Math.random().toString(36).slice(2,
 function sameId(a, b) { return String(a) === String(b); }
 
 function queueChange(action, payload) {
-  const op = { opId: newId(), bar: curBarName, action: action, payload: payload };
+  const op = { opId: newId(), bar: curBarName, action: action, payload: payload, creado: Date.now() };
   applyOp(op);
   saveLocalCache();
   outbox.push(op);
   saveOutbox();
-  renderEverything();
   flushOutbox();
+  renderEverything();
+  // Si a los 10 segundos todavía no se mandó, aparece el cartel.
+  setTimeout(renderSyncState, ESPERA_CARTEL + 500);
   return op;
 }
 
@@ -796,16 +814,20 @@ function sameProduct(a, b) {
 }
 function listaDe(data, nombre) { return nombre === "cantidades" ? (data.cantidades || []) : (data.unidades || []); }
 
-// Un pendiente ya está hecho si la planilla ya lo refleja.
+// Un pendiente ya está hecho si la planilla ya lo refleja. Si es de un día
+// más viejo que los que mandó la planilla, no se puede saber: se vuelve a
+// mandar (la planilla no lo repite).
 function isApplied(op, data) {
   const p = op.payload;
+  const viejo = f => !!data.desde && String(f) < data.desde;
   switch (op.action) {
-    case "add": return p.conteos.every(c => data.conteos.some(x => sameId(x.id, c.id)));
-    case "delete_carga": return !data.conteos.some(x => sameId(x.carga, p.carga));
+    case "add": return p.conteos.every(c => !viejo(c.fecha) && data.conteos.some(x => sameId(x.id, c.id)));
+    case "delete_carga": return !data.desde && !data.conteos.some(x => sameId(x.carga, p.carga));
     case "cerrar": return (data.cierres || []).some(c => c.fecha === p.fecha);
     case "reabrir": return !(data.cierres || []).some(c => c.fecha === p.fecha);
-    case "delete_dia": return !data.conteos.some(x => x.fecha === p.fecha) && !(data.cierres || []).some(c => c.fecha === p.fecha);
+    case "delete_dia": return !viejo(p.fecha) && !data.conteos.some(x => x.fecha === p.fecha) && !(data.cierres || []).some(c => c.fecha === p.fecha);
     case "replace_carga": {
+      if (data.desde) return false;
       const ids = data.conteos.filter(x => sameId(x.carga, p.carga)).map(x => String(x.id)).sort().join("|");
       return ids === p.conteos.map(c => String(c.id)).sort().join("|");
     }
@@ -844,6 +866,7 @@ function applyOp(op) {
       break;
     case "product_set": {
       const i = productos.findIndex(x => x.nombre === p.producto.nombre);
+      productos = productos.slice();
       if (i >= 0) productos[i] = p.producto; else productos.push(p.producto);
       comprasNuevas = comprasNuevas.filter(x => norm(x.nombre) !== norm(p.producto.nombre));
       break;
@@ -872,14 +895,39 @@ function applyOutboxLocally() {
   outbox.filter(op => op.bar === curBarName).forEach(applyOp);
 }
 
+// Pide algo a la planilla con un tiempo máximo: con poca señal, un pedido
+// colgado no deja todo esperando (lo que no llegó se vuelve a mandar).
+const ESPERA_LEER = 30000, ESPERA_MANDAR = 45000;
+async function pedirJson(url, opciones, ms) {
+  const ctrl = typeof AbortController === "function" ? new AbortController() : null;
+  const t = ctrl ? setTimeout(() => ctrl.abort(), ms) : null;
+  try {
+    const res = await fetch(url, Object.assign({}, opciones || {}, ctrl ? { signal: ctrl.signal } : {}));
+    return await res.json();
+  } finally {
+    if (t) clearTimeout(t);
+  }
+}
+
+// Arriba, al lado del bar: "Enviando…" o "Actualizando…".
+let leyendo = false;
+function marcarActualizando() {
+  const el = document.getElementById("actualizando");
+  if (el) el.textContent = flushing && outbox.length ? "Enviando…" : leyendo ? "Actualizando…" : "";
+}
+
 let flushing = false, flushOtraVez = false;
+// El último intento de mandar no llegó a la planilla (sin señal o error).
+let envioFallo = false;
 async function flushOutbox() {
   // Si llega un cambio mientras se está mandando otro, se manda apenas termina.
   if (flushing) { flushOtraVez = true; return; }
   if (outbox.length === 0) return;
   flushing = true;
   flushOtraVez = false;
-  let sentCurrent = false;
+  envioFallo = false;
+  marcarActualizando();
+  let mandoAlgo = false, fallo = false;
   const blocked = new Set();
   for (const op of outbox.slice()) {
     const bar = bars.find(b => b.nombre === op.bar);
@@ -888,8 +936,7 @@ async function flushOutbox() {
     try {
       const body = Object.assign({ action: op.action }, op.payload);
       if (central) { body.clave = central.clave; body.bar = op.bar; }
-      const res = await fetch(central ? central.url : bar.url, { method: "POST", body: JSON.stringify(body) });
-      data = await res.json();
+      data = await pedirJson(central ? central.url : bar.url, { method: "POST", body: JSON.stringify(body) }, ESPERA_MANDAR);
       ok = !!(data && data.ok);
       // La planilla lo rechazó para siempre (por ejemplo, borrar sin permiso).
       // Si la clave no sirve, no se descarta nada: queda en el celular.
@@ -901,17 +948,28 @@ async function flushOutbox() {
     if (ok || drop) {
       outbox = outbox.filter(o => o.opId !== op.opId);
       saveOutbox();
-      if (op.bar === curBarName) sentCurrent = true;
+      mandoAlgo = true;
       if (drop) showToast(op.action === "add" && data && /cerrado/.test(data.error || "") ? "No se guardó: el stock de ese día ya estaba cerrado" : "La planilla no aceptó un cambio");
     } else {
       // Se frena este bar para no mandar sus cambios fuera de orden.
       blocked.add(op.bar);
+      fallo = true;
     }
   }
   flushing = false;
+  envioFallo = fallo;
+  marcarActualizando();
   renderSyncState();
   if (flushOtraVez) { flushOtraVez = false; await flushOutbox(); return; }
-  if (sentCurrent) fetchAllFromSheet();
+  // Lo mandado ya se ve en el celular: no hace falta leer todo de nuevo ya
+  // mismo. Se lee un rato después (por si otro cargó algo).
+  if (mandoAlgo) { renderEverything(); programarLectura(20000); }
+}
+
+let lecturaTimer = null;
+function programarLectura(ms) {
+  clearTimeout(lecturaTimer);
+  lecturaTimer = setTimeout(() => { if (document.visibilityState !== "hidden") fetchAllFromSheet(); }, ms);
 }
 
 let syncProblem = "";
@@ -919,20 +977,17 @@ let fetchSeq = 0;
 
 // Lee todo el bar actual desde la planilla.
 let syncDetalle = "";
-function marcarActualizando(si) {
-  const el = document.getElementById("actualizando");
-  if (el) el.textContent = si ? "Actualizando…" : "";
-}
 async function fetchAllFromSheet(otraVez) {
-  marcarActualizando(true);
-  try { await fetchAllFromSheet_(otraVez); } finally { marcarActualizando(false); }
+  clearTimeout(lecturaTimer);
+  leyendo = true;
+  marcarActualizando();
+  try { await fetchAllFromSheet_(otraVez); } finally { leyendo = false; marcarActualizando(); }
 }
 async function fetchAllFromSheet_(otraVez) {
   // Con la planilla central y sin bares todavía: se pregunta quién es.
   if (central && !curBar()) {
     try {
-      const res = await fetch(getUrl(null, "whoami"));
-      const data = await res.json();
+      const data = await pedirJson(getUrl(null, "whoami"), null, ESPERA_LEER);
       if (data && data.error === "clave") syncProblem = "clave";
       else if (data && data.yo) { syncProblem = ""; aplicarYo(data.yo); }
       else syncProblem = "script";
@@ -945,9 +1000,9 @@ async function fetchAllFromSheet_(otraVez) {
   if (!bar) { renderEverything(); return; }
   const seq = ++fetchSeq;
   const barName = bar.nombre;
+  const antes = syncProblem + "|" + syncDetalle;
   try {
-    const res = await fetch(getUrl(bar, "get_all"));
-    const data = await res.json();
+    const data = await pedirJson(getUrl(bar, "get_all"), null, ESPERA_LEER);
     if (seq !== fetchSeq || barName !== curBarName) return;
     if (central && data && data.error === "clave") {
       syncProblem = "clave";
@@ -963,6 +1018,7 @@ async function fetchAllFromSheet_(otraVez) {
         if (cambio && !otraVez) fetchAllFromSheet(true);
         return;
       }
+      if (cambio) renderHeader();
     }
     // Una respuesta solo sirve si trae de verdad las listas. Si no, se
     // conserva lo que hay en el celular (nunca se vacía la app).
@@ -973,11 +1029,7 @@ async function fetchAllFromSheet_(otraVez) {
       return;
     }
     // Se descartan los pendientes de este bar que la planilla ya tiene (en orden).
-    const drop = new Set();
-    for (const op of outbox.filter(o => o.bar === barName)) {
-      if (isApplied(op, data)) drop.add(op.opId); else break;
-    }
-    if (drop.size) { outbox = outbox.filter(o => !drop.has(o.opId)); saveOutbox(); }
+    descartarHechos(barName, data);
 
     conteos = normData(data.conteos);
     productos = normData(data.productos);
@@ -988,10 +1040,13 @@ async function fetchAllFromSheet_(otraVez) {
     if (Array.isArray(data.pedidos)) pedidos = data.pedidos;
     if (data.precios && typeof data.precios === "object") precios = data.precios;
     comprasNuevas = Array.isArray(data.compras_nuevas) ? data.compras_nuevas : [];
+    conteosDesde = typeof data.desde === "string" ? data.desde : "";
     applyOutboxLocally();
-    saveLocalCache();
+    const cambio = saveLocalCache();
     syncProblem = "";
     lsSet(syncKey(barName), String(Date.now()));
+    // Si no cambió nada, no se vuelve a dibujar (la pantalla no salta).
+    if (!cambio && antes === syncProblem + "|" + syncDetalle) { renderSyncState(); return; }
   } catch (e) {
     if (seq !== fetchSeq) return;
     console.error("No se pudo leer la planilla", e);
@@ -1000,9 +1055,49 @@ async function fetchAllFromSheet_(otraVez) {
   renderEverything();
 }
 
+function descartarHechos(barName, data) {
+  const drop = new Set();
+  for (const op of outbox.filter(o => o.bar === barName)) {
+    if (isApplied(op, data)) drop.add(op.opId); else break;
+  }
+  if (drop.size) { outbox = outbox.filter(o => !drop.has(o.opId)); saveOutbox(); }
+}
+
+// Primero se manda lo pendiente y después se lee: así lo leído ya lo trae.
 async function syncNow() {
-  await fetchAllFromSheet();
   await flushOutbox();
+  await fetchAllFromSheet();
+  precargarOtrosBares();
+}
+
+// Quien tiene varios bares: los otros se leen de a uno, sin apuro, así al
+// cambiar de bar ya están al día. Solo los que hace más de 15 minutos que no
+// se leen.
+let precargando = false;
+async function precargarOtrosBares() {
+  if (precargando || bars.length < 2) return;
+  precargando = true;
+  try {
+    for (const b of bars.slice()) {
+      if (b.nombre === curBarName || document.visibilityState === "hidden") continue;
+      if (Date.now() - Number(lsGet(syncKey(b.nombre), "0")) < 15 * 60000) continue;
+      let data = null;
+      try { data = await pedirJson(getUrl(b, "get_all"), null, ESPERA_LEER); } catch (e) { break; }
+      if (!data || !Array.isArray(data.conteos) || !Array.isArray(data.productos)) break;
+      // Si mientras tanto se pasó a ese bar, ya lo lee la pantalla.
+      if (b.nombre === curBarName || !bars.some(x => x.nombre === b.nombre)) continue;
+      descartarHechos(b.nombre, data);
+      lsSet(cacheKey(b.nombre), JSON.stringify({ conteos: normData(data.conteos), productos: normData(data.productos),
+        unidades: Array.isArray(data.unidades) && data.unidades.length ? data.unidades : [...DEFAULT_UNITS],
+        cantidades: Array.isArray(data.cantidades) && data.cantidades.length ? data.cantidades : [...DEFAULT_CANTS],
+        planilla: typeof data.planilla === "string" ? data.planilla : "", cierres: Array.isArray(data.cierres) ? data.cierres : [],
+        pedidos: Array.isArray(data.pedidos) ? data.pedidos : [], precios: data.precios && typeof data.precios === "object" ? data.precios : {},
+        compras_nuevas: Array.isArray(data.compras_nuevas) ? data.compras_nuevas : [], desde: typeof data.desde === "string" ? data.desde : "" }));
+      lsSet(syncKey(b.nombre), String(Date.now()));
+    }
+  } finally {
+    precargando = false;
+  }
 }
 
 // ============================================================
@@ -1050,7 +1145,17 @@ function saveFile(filename, text, mime) {
   URL.revokeObjectURL(url);
 }
 
-function prodByName(n) { return productos.find(p => p.nombre === n); }
+// Productos por nombre y stock de cada día: se arman una vez y se vuelven a
+// armar solo si cambian los datos (así dibujar es rápido aunque haya mucho).
+let idxProdRef = null, idxProdLen = -1, idxProd = new Map();
+function prodByName(n) {
+  if (idxProdRef !== productos || idxProdLen !== productos.length) {
+    idxProd = new Map();
+    productos.forEach(p => { if (!idxProd.has(p.nombre)) idxProd.set(p.nombre, p); });
+    idxProdRef = productos; idxProdLen = productos.length;
+  }
+  return idxProd.get(n);
+}
 function esTop(p) { return p.grupo === "Top 10"; }
 function famOf(p) { return String(p.familia || "").trim() || SIN_FAMILIA; }
 // Productos de una categoría, en el orden de la hoja Catálogo. parte "Top 10"
@@ -1085,10 +1190,14 @@ function equivalente(p, cantidad) {
 }
 // Un stock por día: lo último cargado de cada producto en esa fecha.
 function byCargado(a, b) { return String(a.cargado).localeCompare(String(b.cargado)) || String(a.id).localeCompare(String(b.id)); }
+let idxDiasRef = null, idxDiasLen = -1, idxDias = {};
 function stockDelDia(fecha) {
-  const m = {};
-  conteos.filter(c => c.fecha === fecha).sort(byCargado).forEach(c => { m[c.producto] = c; });
-  return m;
+  if (idxDiasRef !== conteos || idxDiasLen !== conteos.length) {
+    idxDias = {};
+    conteos.slice().sort(byCargado).forEach(c => { (idxDias[c.fecha] = idxDias[c.fecha] || {})[c.producto] = c; });
+    idxDiasRef = conteos; idxDiasLen = conteos.length;
+  }
+  return idxDias[fecha] || {};
 }
 function cierreDe(fecha) { return cierres.find(c => c.fecha === fecha) || null; }
 function isCerrado(fecha) { return !!cierreDe(fecha); }
@@ -1109,6 +1218,8 @@ function faltanDelDia(fecha) {
 // ============================================================
 // RENDER
 // ============================================================
+// Las tarjetas que están abiertas (para que no se cierren al actualizar).
+const diasAbiertos = new Set();
 function diaHtml(fecha) {
   const s = stockDelDia(fecha);
   const cierre = cierreDe(fecha);
@@ -1117,6 +1228,17 @@ function diaHtml(fecha) {
     const l = productosDe(cat);
     return l.length ? cat + ": " + l.filter(p => s[p.nombre]).length + " de " + l.length : "";
   }).filter(Boolean).join(" · ");
+  const ver = diasAbiertos.has(fecha);
+  return '<details class="group" data-dia="' + esc(fecha) + '"' + (ver ? " open" : "") + '><summary>' +
+      '<div class="g-left"><div class="g-title">Stock del ' + esc(dayLabel(fecha)) + '</div><div class="g-meta">' + esc(resumen) + '</div></div>' +
+      '<span class="estado ' + (abierto ? "abierto" : "cerrado") + '">' + (abierto ? "ABIERTO" : "CERRADO") + '</span>' +
+    '</summary><div class="g-body">' + (ver ? diaBody(fecha) : "") + '</div></details>';
+}
+// El detalle de un día (lo que se ve al abrir la tarjeta).
+function diaBody(fecha) {
+  const s = stockDelDia(fecha);
+  const cierre = cierreDe(fecha);
+  const abierto = !cierre;
   let body = "";
   CATEGORIAS.forEach(cat => familiasDe(cat).forEach(f => {
     const l = productosDe(cat, null, f);
@@ -1142,16 +1264,32 @@ function diaHtml(fecha) {
   if (abierto && can("cerrar")) btns += '<button class="btn-close" data-cerrar="' + esc(fecha) + '">Cerrar stock</button>';
   if (!abierto && can("reabrir")) btns += '<button class="btn-edit" data-reabrir="' + esc(fecha) + '">Reabrir para modificar</button>';
   if (can("borrar")) btns += '<button class="btn-del" data-deldia="' + esc(fecha) + '">Borrar este día</button>';
-  return '<details class="group"><summary>' +
-      '<div class="g-left"><div class="g-title">Stock del ' + esc(dayLabel(fecha)) + '</div><div class="g-meta">' + esc(resumen) + '</div></div>' +
-      '<span class="estado ' + (abierto ? "abierto" : "cerrado") + '">' + (abierto ? "ABIERTO" : "CERRADO") + '</span>' +
-    '</summary><div class="g-body">' + body + (extras.length ? '<div class="g-extra">' + extras.join("<br>") + '</div>' : "") + btns + '</div></details>';
+  return body + (extras.length ? '<div class="g-extra">' + extras.join("<br>") + '</div>' : "") + btns;
 }
 
 function renderDias(containerId, fechas, emptyText) {
   const c = document.getElementById(containerId);
   if (!fechas.length) { c.innerHTML = '<div class="empty-state">' + emptyText + '</div>'; return; }
   c.innerHTML = fechas.map(diaHtml).join("");
+  c.querySelectorAll("details[data-dia]").forEach(d => {
+    const llenar = () => {
+      const body = d.querySelector(".g-body");
+      if (!body.dataset.listo) { body.innerHTML = diaBody(d.getAttribute("data-dia")); bindDia(d); }
+    };
+    if (d.open) bindDia(d);
+    // Se llena al tocarla (antes de que se abra, así no se ve vacía).
+    d.querySelector("summary").addEventListener("click", () => { if (!d.open) llenar(); });
+    d.addEventListener("toggle", () => {
+      const f = d.getAttribute("data-dia");
+      if (!d.open) { diasAbiertos.delete(f); return; }
+      diasAbiertos.add(f);
+      llenar();
+    });
+  });
+}
+function bindDia(d) {
+  const c = d.querySelector(".g-body");
+  c.dataset.listo = "1";
   c.querySelectorAll("[data-seguir]").forEach(b => b.addEventListener("click", () => openCarga(b.getAttribute("data-seguir"))));
   c.querySelectorAll("[data-cerrar]").forEach(b => b.addEventListener("click", () => cerrarDia(b.getAttribute("data-cerrar"))));
   c.querySelectorAll("[data-reabrir]").forEach(b => b.addEventListener("click", () => {
@@ -1208,7 +1346,11 @@ let historyLimit = 20;
 function renderHistorial() {
   const fechas = fechasConStock();
   renderDias("historyList", fechas.slice(0, historyLimit), "Todavía no hay stock cargado.");
-  document.getElementById("historyMore").style.display = fechas.length > historyLimit ? "block" : "none";
+  const mas = fechas.length > historyLimit;
+  document.getElementById("historyMore").style.display = mas ? "block" : "none";
+  const viejos = document.getElementById("historyViejos");
+  viejos.style.display = !mas && conteosDesde ? "block" : "none";
+  viejos.textContent = conteosDesde ? "Los días de antes del " + dayLabelLong(conteosDesde) + " están en la planilla (hojas Conteos y Resumen)." : "";
 }
 
 // Qué listas de productos están abiertas en Config (para no cerrarlas al actualizar).
@@ -1276,10 +1418,14 @@ function renderConfig() {
   document.getElementById("phoneInfo").innerHTML = info.join("<br>");
 }
 
+// El cartel de "sin enviar" aparece si no se pudo mandar o si tarda más de
+// 10 segundos (mientras se manda normal, arriba dice "Enviando…").
+const ESPERA_CARTEL = 10000;
 function renderSyncState() {
   const banner = document.getElementById("syncBanner");
   const n = outbox.length;
   const uno = n === 1;
+  const atrasado = n > 0 && (envioFallo || !flushing || outbox.some(op => !op.creado || Date.now() - op.creado > ESPERA_CARTEL));
   let cls = "", html = "";
   if (!curBar()) {
     cls = "alert";
@@ -1288,7 +1434,7 @@ function renderSyncState() {
     cls = "alert";
     html = "<strong>Tu link ya no funciona</strong>Pedile a Ignacio un link de instalación nuevo. Lo cargado en este celular no se pierde" +
       (n > 0 ? " (" + (uno ? "1 carga sin enviar" : n + " cargas sin enviar") + ")" : "") + ".";
-  } else if (n > 0) {
+  } else if (atrasado) {
     cls = "wait";
     html = "<strong>" + (uno ? "1 carga sin enviar" : n + " cargas sin enviar") + "</strong>" +
       (uno ? "Está guardada en este celular y se manda sola" : "Están guardadas en este celular y se mandan solas") + " a la planilla cuando haya señal.";
@@ -1301,7 +1447,8 @@ function renderSyncState() {
     html = "<strong>Sin conexión con la planilla</strong>Se muestra lo último guardado en este celular. Podés seguir cargando: se manda solo cuando vuelva la señal.";
   }
   banner.className = "sync-banner" + (cls ? " show " + cls : "");
-  banner.innerHTML = html;
+  if (banner.innerHTML !== html) banner.innerHTML = html;
+  marcarActualizando();
 
   const state = document.getElementById("linkState");
   state.className = "link-state " + (curBar() ? "ok" : "no");
@@ -1323,11 +1470,25 @@ function noAccessHtml() {
   return "<strong>Este celular todavía no está conectado a ningún bar</strong>Abrí el link de instalación que te pasaron y, desde esa página, agregá la app a la pantalla de inicio.";
 }
 
+// Se dibuja solo la pestaña que se ve; las otras, cuando se abren.
+const DIBUJAR = { inicio: () => renderInicio(), historial: () => renderHistorial(), pedidos: () => renderPedidos(), config: () => renderConfig() };
+const pestanasSucias = new Set();
+function pestanaActiva() {
+  const p = document.querySelector(".tab-panel.active");
+  return p ? p.id.replace("tab-", "") : "inicio";
+}
+function dibujarPestana(t) {
+  pestanasSucias.delete(t);
+  if (curBar() && DIBUJAR[t]) DIBUJAR[t]();
+}
+
 function renderEverything() {
   const hasBar = !!curBar();
   const na = document.getElementById("noAccess");
   na.style.display = hasBar ? "none" : "block";
-  na.innerHTML = hasBar ? "" : noAccessHtml();
+  const nah = hasBar ? "" : noAccessHtml();
+  if (na.innerHTML !== nah) na.innerHTML = nah;
+  Object.keys(DIBUJAR).forEach(t => pestanasSucias.add(t));
   document.getElementById("tabPedidos").style.display = can("pedir") ? "flex" : "none";
   if (!can("pedir") && document.getElementById("tab-pedidos").classList.contains("active")) showTab("inicio");
   document.getElementById("tabbar").style.display = hasBar ? "flex" : "none";
@@ -1335,10 +1496,7 @@ function renderEverything() {
   renderHeader();
   renderSyncState();
   if (!hasBar) return;
-  renderInicio();
-  renderHistorial();
-  renderPedidos();
-  renderConfig();
+  dibujarPestana(pestanaActiva());
   if (document.getElementById("pedOverlay").classList.contains("open") && (pdStep === 1 || pdStep === 2)) renderPedWizard();
   // Si está abierta la carga, actualiza los ✓ (sin tocar lo que se está escribiendo).
   if (document.getElementById("cargaOverlay").classList.contains("open") && wStep !== 4) renderWizard();
@@ -1350,6 +1508,7 @@ function renderEverything() {
 function showTab(tab) {
   document.querySelectorAll(".tab-btn").forEach(b => b.classList.toggle("active", b.getAttribute("data-tab") === tab));
   document.querySelectorAll(".tab-panel").forEach(p => p.classList.toggle("active", p.id === "tab-" + tab));
+  if (pestanasSucias.has(tab)) dibujarPestana(tab);
   window.scrollTo(0, 0);
 }
 document.querySelectorAll(".tab-btn").forEach(b => b.addEventListener("click", () => showTab(b.getAttribute("data-tab"))));
@@ -1940,14 +2099,16 @@ function avisarEnvio(op) {
   const mostrar = (cls, html) => { box.className = "pedido-ok show " + cls; box.innerHTML = html; };
   mostrar("enviando", "Enviando el pedido…");
   const inicio = Date.now();
+  let avisado = false;
   const mirar = () => {
     const pendiente = outbox.some(o => o.opId === op.opId);
     if (!pendiente) { mostrar("ok", "<strong>✓ Pedido realizado con éxito</strong>Ya está en la planilla central."); setTimeout(() => box.className = "pedido-ok", 6000); return; }
-    if (!flushing && Date.now() - inicio > 3000 || Date.now() - inicio > 20000) {
+    if (!avisado && (!flushing && Date.now() - inicio > 3000 || Date.now() - inicio > 20000)) {
+      avisado = true;
       mostrar("espera", "<strong>Pedido guardado en el celular</strong>No hay conexión con la planilla: se manda solo cuando vuelva la señal.");
-      return;
     }
-    setTimeout(mirar, 400);
+    // Se sigue mirando un rato: si llega, se avisa.
+    if (Date.now() - inicio < 180000) setTimeout(mirar, avisado ? 1000 : 400);
   };
   setTimeout(mirar, 400);
 }
@@ -1995,19 +2156,39 @@ function renderPedidos() {
   }));
   const todos = pedidosAgrupados();
   const c = document.getElementById("pedidoList");
+  const mostrados = todos.slice(0, pedidoLimit);
   if (!todos.length) c.innerHTML = '<div class="empty-state">Todavía no hay pedidos.</div>';
-  else c.innerHTML = todos.slice(0, pedidoLimit).map((items, i) => {
+  else c.innerHTML = mostrados.map(items => {
     const it = items[0];
     const t = totalDe(items);
     const provs = porProveedor(items).length;
     const est = estadoPedido(items);
-    return '<details class="group"><summary><div class="g-left"><div class="g-title">Pedido del ' + esc(dayLabel(it.fecha)) + ' · ' + esc(it.categoria) + '</div>' +
+    const k = String(it.pedido || it.id);
+    const ver = pedidosAbiertos.has(k);
+    return '<details class="group" data-ped="' + esc(k) + '"' + (ver ? " open" : "") + '><summary><div class="g-left"><div class="g-title">Pedido del ' + esc(dayLabel(it.fecha)) + ' · ' + esc(it.categoria) + '</div>' +
       '<div class="g-meta">' + (provs === 1 ? "1 proveedor" : provs + " proveedores") + ' · ' + esc(it.persona) + ' · ' + fmtPesos(t.total) + '</div></div>' +
-      '<span class="estado ' + est.cls + '">' + esc(est.txt) + '</span></summary><div class="g-body">' + lineasHtml(items) +
-      (t.sinPrecio ? '<div class="g-extra">' + (t.sinPrecio === 1 ? "1 producto sin precio, no está" : t.sinPrecio + " productos sin precio, no están") + ' en el total.</div>' : "") +
-      (it.nota ? '<div class="g-extra">Nota: ' + esc(it.nota) + '</div>' : "") + '</div></details>';
+      '<span class="estado ' + est.cls + '">' + esc(est.txt) + '</span></summary><div class="g-body">' + (ver ? pedidoBody(items) : "") + '</div></details>';
   }).join("");
+  // El detalle se dibuja al abrir la tarjeta; las abiertas siguen abiertas.
+  c.querySelectorAll("details[data-ped]").forEach((d, i) => {
+    const llenar = () => { const body = d.querySelector(".g-body"); if (!body.innerHTML) body.innerHTML = pedidoBody(mostrados[i]); };
+    d.querySelector("summary").addEventListener("click", () => { if (!d.open) llenar(); });
+    d.addEventListener("toggle", () => {
+      const k = d.getAttribute("data-ped");
+      if (!d.open) { pedidosAbiertos.delete(k); return; }
+      pedidosAbiertos.add(k);
+      llenar();
+    });
+  });
   document.getElementById("pedidoMore").style.display = todos.length > pedidoLimit ? "block" : "none";
+}
+const pedidosAbiertos = new Set();
+function pedidoBody(items) {
+  const it = items[0];
+  const t = totalDe(items);
+  return lineasHtml(items) +
+    (t.sinPrecio ? '<div class="g-extra">' + (t.sinPrecio === 1 ? "1 producto sin precio, no está" : t.sinPrecio + " productos sin precio, no están") + ' en el total.</div>' : "") +
+    (it.nota ? '<div class="g-extra">Nota: ' + esc(it.nota) + '</div>' : "");
 }
 document.getElementById("pedidoMore").addEventListener("click", () => { pedidoLimit += 15; renderPedidos(); });
 
@@ -2128,8 +2309,9 @@ async function start() {
   renderEverything();
   if (!central && curBar() && !PEOPLE.includes(phoneOwner)) document.getElementById("whoOverlay").classList.add("open");
   await syncNow();
-  // Lee la planilla cada 5 minutos y reintenta los pendientes cada 30 segundos.
-  setInterval(fetchAllFromSheet, 300000);
+  // Lee la planilla cada 5 minutos (si la app está a la vista) y reintenta
+  // los pendientes cada 30 segundos.
+  setInterval(() => { if (document.visibilityState !== "hidden") fetchAllFromSheet(); }, 300000);
   setInterval(flushOutbox, 30000);
   window.addEventListener("online", syncNow);
   document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") { revisarVersion(); syncNow(); } });

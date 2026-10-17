@@ -101,15 +101,24 @@ quiere armar.
   cuentan. Se precalcula en la hoja **Precios** de la central al cargar
   compras (menú "Recalcular precios" si se editan a mano): la app no lee
   todas las compras en cada pedido. Búsqueda: por **código** (columna 7 del
-  Catálogo) en las compras donde figura ese bar, si no por nombre o
-  Equivalencias; si hay compras con proveedor no se mezclan las "Sin
-  proveedor". Reportes: Archie/Hugo "Detalle de Compras" (con Familia y
-  U. Medida: solo cuenta lo de familia BARRA para "nuevos"); Felicidad e
-  Industrias "DETALLE DE COMPRAS … TOTALES POR: FECHA" (2 renglones de
-  título; GRUPO2 = fecha, SUBGRUPO2 = bar, trae CODIGO, **no trae
-  proveedor** — pendiente que Noel diga si se puede sacar por proveedor).
-  Las columnas GRUPO se reconocen por lo que dicen (fecha, bar o
-  proveedor).
+  Catálogo) en las hojas de compras donde figura ese bar (los códigos son
+  de ese Cuccina), si no por nombre o Equivalencias; si hay compras con
+  proveedor no se mezclan las "Sin proveedor". Reportes: Archie/Hugo
+  "Detalle de Compras" (con Familia y U. Medida: solo cuenta lo de familia
+  BARRA para "nuevos"). Felicidad e Industrias, **dos reportes** del mismo
+  período (Cuccina no deja sacar proveedor y bar juntos): (1) "DETALLE DE
+  COMPRAS … TOTALES POR: FECHA" desglosado **por bar** (2 renglones de
+  título; GRUPO2 = fecha, SUBGRUPO2 = bar, trae CODIGO, no trae proveedor)
+  → hoja "Compras Felicidad e Industrias": de ahí sale **el precio** (la
+  última compra por fecha); (2) el mismo reporte desglosado **por
+  proveedor** (GRUPO2 = proveedor, sin fechas) → hoja "Proveedores
+  Felicidad e Industrias": **solo** para saber a quién se le compra cada
+  código; de ahí no sale ningún precio ni producto (sus precios serían
+  promedios del período; decisión de Ignacio, 17/10/2026). Si a un código
+  se le compra a varios proveedores, el producto aparece con cada uno (el
+  que más se compró primero) y el mismo último precio. Las columnas GRUPO
+  se reconocen por lo que dicen (fecha, bar o proveedor), por separado en
+  cada tanda cargada (cada carga repite sus títulos).
 - **Vinos:** si el catálogo de un bar no tiene ninguna familia de vinos
   (Hugo: los vinos no se cuentan), los vinos de sus compras no aparecen en
   "Nuevos en las compras". Vino = comprado por **Unidad** y con la cepa en
@@ -136,12 +145,12 @@ quiere armar.
   Brunchería, Capitán, Apartamento y Billy Beer (después Dada Güemes,
   Vinatería…). Sus catálogos salieron de "INVENTARIOS_FELICIDAD.xlsx"
   (solo bebidas e insumos de barra, familias = secciones del inventario,
-  columna 7 "Código Cuccina" solo de referencia). Precios: hoja "Compras
-  Felicidad e Industrias" = la hoja "COMPRAS…" de ese Excel (resumen sin
-  fechas; proveedor en GRUPO2, solo en el primer renglón de cada uno).
-  Como ahí los nombres no coinciden con los inventarios, Equivalencias se
-  armó **por código** (mismo nombre de compras → producto de cada bar; un
-  nombre puede ir en varios renglones). Hugo: catálogo de
+  columna 7 "Código Cuccina", que es la que usa la búsqueda de precios).
+  Precios: los dos reportes de arriba. Al principio se usó la hoja
+  "COMPRAS…" de ese Excel (resumen sin fechas) y, como ahí los nombres no
+  coincidían con los inventarios, Equivalencias se armó **por código**
+  (mismo nombre de compras → producto de cada bar; un nombre puede ir en
+  varios renglones). Hugo: catálogo de
   "INVENTARIO_HUGO_actualizado.xlsx" + equivalencias de sus compras viejas.
 - **Cargar compras** (menú "Stock bares → Cargar compras (Excel de
   Cuccina)"): ventana donde Ignacio elige el destino (Archie, Hugo,
@@ -149,14 +158,15 @@ quiere armar.
   (sugiere "depurado" o la que empieza con "COMPRAS"). El Excel se lee en
   la ventana (SheetJS de cdnjs) y `cargarCompras` lo **agrega** a la hoja
   "Compras <destino>" sin repetir renglones (casilla para reemplazar). Así
-  no se pierden precios viejos y gana lo más nuevo.
-- **Precio = el que viene en el reporte, por unidad de producto, tal cual**
-  (decisión de Ignacio, octubre 2026: Precio Unitario, columna H, en
-  Archie/Hugo; columna "Precio Unitario" en el resumen de Felicidad e
-  Industrias). Si después resultan mal, se vuelve a importar el reporte.
-  Ojo: en Cuccina las bebidas de corte suelen tener cantidad en litros
-  (ej. Chivas 0,7), así que ese precio podría ser por litro; se lo
-  mostramos y prefirió dejarlo así por ahora.
+  no se pierden precios viejos y gana lo más nuevo. Para los destinos que
+  no son un bar (Felicidad e Industrias) pide **los dos Excel**: 1. el
+  reporte por bar y 2. el reporte por proveedor (va a "Proveedores
+  <destino>"); controla que no estén al revés (el primero tiene que traer
+  fechas; el segundo, proveedores). La casilla de borrar vale para los
+  dos. Google no deja escribir fuera de los renglones/columnas de una hoja
+  (una nueva tiene 1000 × 26): el código agrega lo que falte (`lugar_`).
+- (Hasta el 17/10/2026 el precio era el "Precio Unitario" del reporte; se
+  cambió a total con impuestos ÷ cantidad, ver Precios.)
 - **Pedidos** (solo con la planilla central; los hacen encargados y Noel):
   fecha y Barra/Cocina → proveedor → productos del catálogo con precio de
   costo (o "sin precio") y total que se va sumando → Revisar → **"Enviar
@@ -170,6 +180,32 @@ quiere armar.
   "Pedidos hechos". Los pedidos viejos que quedaron en la hoja Pedidos de
   cada bar se siguen viendo. El borrador queda en el celular
   (`stockbares_bar_<bar>_pedido_borrador`).
+- **Velocidad (17/10/2026, pedido de Ignacio):**
+  - Planilla central: memoria rápida de Google (CacheService) para
+    Personas y Bares (10 min) y los precios de cada bar (6 h, clave con la
+    huella del catálogo y un número de versión de precios). Se borra sola
+    al editar a mano la central (`onEdit`) y cuando el código cambia algo
+    (cargar compras, equivalencias, armar links). Si una clave o un bar no
+    está en la memoria, se mira la planilla (alguien recién agregado entra
+    enseguida). No se lee dos veces lo mismo en un pedido; pedidos y
+    equivalencias no abren la planilla del bar; la planilla del bar se abre
+    antes del candado. Resumen sin releer lo ya leído y con las "Dif." de
+    una vez (`getRangeList`). Medido con la planilla simulada: leer un bar
+    pasó de 56 a 19 llamadas.
+  - A la app van los últimos **60 días** de stock (`DIAS_A_LA_APP`; la
+    respuesta trae `desde`); lo de antes queda en Conteos y Resumen, y el
+    Historial lo avisa. Un pendiente de un día más viejo que `desde` no se
+    da por hecho: se vuelve a mandar (la planilla no lo repite).
+  - App: dibuja solo la pestaña que se ve y el detalle de cada tarjeta al
+    abrirla (las abiertas siguen abiertas al actualizar); si lo leído no
+    cambió, no redibuja; primero manda lo pendiente y después lee; después
+    de mandar no relee enseguida (a los 20 s); tiempo máximo de 30 s para
+    leer y 45 s para mandar; el cartel amarillo de "sin enviar" aparece si
+    no se pudo mandar o si tarda más de 10 s (mientras tanto arriba dice
+    "Enviando…"); quien tiene varios bares tiene los otros leídos de fondo
+    (los que hace más de 15 min que no se leen). En un celular lento con
+    Apartamento (153 productos, 60 días): dibujar pasó de 620 ms a 11 ms y
+    abrir de 2,2 s a 0,5 s.
 - **Versión de la app:** `APP_VERSION` en `stockbares/index.html` tiene que
   ser igual a `stockbares/version.json`. Al abrir, la app lee version.json
   y si cambió se recarga sola (una vez por versión, con `?v=`). **Al
