@@ -767,10 +767,80 @@ function cargarCompras(destino, filas, reemplazar, filasProv) {
   if (prov && !tipoReporte_(prov, bares).proveedores) {
     throw new Error("El segundo Excel no trae proveedores. Abajo va el reporte desglosado por proveedor.");
   }
+  // Solo bebidas: lo que no es bebida no se guarda en la planilla.
+  const filtro = filtroBebidas_(destino, compras, prov, reemplazar);
+  const fuera = (compras ? filtro(compras) : 0) + (prov ? filtro(prov) : 0);
   const r = compras ? pegarReporte_("Compras " + destino, compras, reemplazar) : { hoja: "Compras " + destino, agregados: 0, repetidos: 0 };
   r.proveedores = prov ? pegarReporte_("Proveedores " + destino, prov, reemplazar) : null;
+  r.fuera = fuera;
   r.precios = reconstruirPrecios_();
   return r;
+}
+
+// Devuelve una funcion que saca de un reporte (ya preparado) los renglones
+// que no son bebida y dice cuantos saco. Con Familia (Archie, Hugo): solo lo
+// de barra. Sin Familia (Felicidad e Industrias): lo que esta en el
+// catalogo de algun bar (por codigo o nombre) o se le compra a un proveedor
+// de la hoja "Proveedores de bebida" (segun el reporte por proveedor).
+function filtroBebidas_(destino, compras, prov, reemplazar) {
+  const bares = {};
+  leerBares_().forEach(function (b) { bares[norm_(b.nombre)] = b.nombre; });
+  let provPorCodigo = null, catalogo = null;
+  const sinPrefijo = function (v) { return String(v || "").trim().replace(/\s*\(\d+\)\s*$/, ""); };
+  const preparar = function () {
+    if (provPorCodigo) return;
+    provPorCodigo = {};
+    if (!reemplazar || !prov) {
+      const viejo = proveedoresPorCodigo_(destino, Object.keys(bares).map(function (k) { return bares[k]; })) || {};
+      Object.keys(viejo).forEach(function (k) { provPorCodigo[k] = viejo[k].slice(); });
+    }
+    if (prov) {
+      const c = columnasCompras_(prov[0]);
+      const roles = rolesGrupos_(prov, 0, c, bares);
+      const jp = c.prov >= 0 ? c.prov : c.grupos[roles.indexOf("prov")];
+      if (jp !== undefined && c.cod >= 0) prov.slice(1).forEach(function (r) {
+        const k = String(r[c.cod]).trim(), v = sinPrefijo(r[jp]);
+        if (k && v) (provPorCodigo[k] = provPorCodigo[k] || []).push(v);
+      });
+    }
+    // Codigos y nombres de los catalogos de todos los bares.
+    catalogo = { codigos: {}, nombres: {} };
+    const eq = leerEquivalencias_();
+    leerBares_().forEach(function (b) {
+      try {
+        const sh = SpreadsheetApp.openById(b.id).getSheetByName(SHEET_CATALOGO);
+        if (!sh) return;
+        sh.getDataRange().getValues().slice(1).forEach(function (r) {
+          if (String(r[0]).trim()) catalogo.nombres[norm_(r[0])] = true;
+          if (String(r[6] === undefined ? "" : r[6]).trim()) catalogo.codigos[String(r[6]).trim()] = true;
+        });
+      } catch (e) {}
+    });
+    Object.keys(eq).forEach(function (k) { if (eq[k] !== NO_ES_STOCK) catalogo.nombres[k] = true; });
+  };
+  const provBebida = proveedoresDeBebida_();
+  return function (datos) {
+    const c = columnasCompras_(datos[0]);
+    let fuera = 0;
+    const quedan = [datos[0]].concat(datos.slice(1).filter(function (r) {
+      let si;
+      const nombre = c.nom >= 0 ? String(r[c.nom]).trim() : "";
+      if (!nombre) return true;
+      if (c.familia >= 0) si = /barra/i.test(norm_(r[c.familia]));
+      else {
+        preparar();
+        const k = c.cod >= 0 ? String(r[c.cod]).trim() : "";
+        const provs = (k && provPorCodigo[k]) || [];
+        si = !NO_ES_PRODUCTO_.test(nombre) && (!!(k && catalogo.codigos[k]) || !!catalogo.nombres[norm_(nombre)] ||
+          provs.some(function (v) { const x = norm_(v); return provBebida.some(function (b) { return x.indexOf(b) >= 0; }); }));
+      }
+      if (!si) fuera++;
+      return si;
+    }));
+    datos.length = 0;
+    quedan.forEach(function (r) { datos.push(r); });
+    return fuera;
+  };
 }
 
 // Deja los renglones de un Excel parejos y saca lo que haya arriba de la
@@ -906,6 +976,7 @@ const VENTANA_COMPRAS = '<!DOCTYPE html><html><head><meta charset="utf-8"><base 
   'google.script.run.withSuccessHandler(function(res){libros=[null,null];listo();document.getElementById("archivo").value="";document.getElementById("archivo2").value="";' +
   'var t="Listo: "+res.agregados+" renglones nuevos en la hoja «"+res.hoja+"»"+(res.repetidos?" ("+res.repetidos+" ya estaban y no se repitieron)":"");' +
   'if(res.proveedores)t+=" y "+res.proveedores.agregados+" en «"+res.proveedores.hoja+"»"+(res.proveedores.repetidos?" ("+res.proveedores.repetidos+" ya estaban)":"");' +
+  'if(res.fuera)t+=". Quedaron afuera "+res.fuera+" renglones que no son bebida (comida, limpieza, servicios)";' +
   'msg(t+". La hoja «Precios» quedó con "+res.precios+" precios y la app ya los toma.","ok");})' +
   '.withFailureHandler(function(err){b.disabled=false;msg("No se cargó: "+err.message,"err");})' +
   '.cargarCompras(d.value,f1,document.getElementById("reemplazar").checked,f2);});' +

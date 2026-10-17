@@ -106,8 +106,11 @@ quiere armar.
   bares solo los productos de **Barra** del catálogo llevan precio (los de
   Cocina, como los de Archie, quedan sin precio ni proveedor en los
   pedidos y no cuentan en "sin precio"). Felicidad e Industrias no trae
-  Familia: vale el catálogo de cada bar, que tiene solo bebidas e insumos
-  de barra. Se precalcula en la hoja **Precios** de la central al cargar
+  Familia: es bebida lo que está en el catálogo de algún bar (código o
+  nombre/Equivalencias) o se le compra a un proveedor de "Proveedores de
+  bebida". **Al cargar compras, lo que no es bebida ni se guarda** en las
+  hojas Compras/Proveedores (`filtroBebidas_`; la ventana dice cuántos
+  renglones quedaron afuera). Se precalcula en la hoja **Precios** de la central al cargar
   compras (menú "Recalcular precios" si se editan a mano): la app no lee
   todas las compras en cada pedido. Búsqueda: por **código** (columna 7 del
   Catálogo) en las hojas de compras donde figura ese bar (los códigos son
