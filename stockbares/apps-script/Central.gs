@@ -729,15 +729,15 @@ function onOpen() {
 // ------------------------------------------------------------
 function cargarComprasVentana() {
   const destinos = hojasCompras_().map(function (sh) { return sh.getName().replace(/^compras\s*/i, ""); }).filter(String);
-  ["Archie", "Hugo", "Felicidad e Industrias"].forEach(function (d) {
-    if (!destinos.some(function (x) { return norm_(x) === norm_(d); })) destinos.push(d);
+  ["Archi", "Hugo", "Felicidad e Industrias"].forEach(function (d) {
+    if (!destinos.some(function (x) { return norm_(x) === norm_(d) || mismoBar_(x, d); })) destinos.push(d);
   });
   // Los que no son un bar (Felicidad e Industrias) comparten un reporte que
   // no trae proveedor: piden tambien el reporte desglosado por proveedor.
   const bares = leerBares_();
   const lista = destinos.map(function (d) {
     // Archie y Hugo tienen su propio reporte (trae proveedor): un solo Excel.
-    return { nombre: d, compartido: !/^(archie|hugo)$/i.test(norm_(d)) && !bares.some(function (b) { return mismoBar_(b.nombre, d); }) };
+    return { nombre: d, compartido: !/^(archie?|hugo)$/i.test(norm_(d)) && !bares.some(function (b) { return mismoBar_(b.nombre, d); }) };
   });
   const html = HtmlService.createHtmlOutput(VENTANA_COMPRAS.replace("__DESTINOS__", JSON.stringify(lista)))
     .setWidth(480).setHeight(580);

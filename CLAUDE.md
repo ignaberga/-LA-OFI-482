@@ -25,7 +25,9 @@ quiere armar.
 
 - Pedido de **Noel** (dueño de los bares, jefe de Ignacio). **Solo registra el
   stock contado a una fecha**: las compras y las ventas Noel ya las tiene en
-  su sistema de gestión, y la comparación la hace él. Primer bar: **Archie**.
+  su sistema de gestión, y la comparación la hace él. Primer bar: **Archi**
+  (así, sin e: en la hoja Bares dice ARCHI; en notas viejas figura "Archie".
+  El código reconoce las dos formas, `mismoBar_`).
 - La primera versión (compras, ventas por trago, pases, bajas y control de
   faltantes) se sacó y quedó guardada en `archivo/stockbares-v1-control/`.
 - **Un solo stock por día.** Flujo (cargan el **Encargado** y **Noel**):
