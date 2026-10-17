@@ -302,6 +302,22 @@ function reconstruirPrecios_() {
   const bares = leerBares_().map(function (b) { return b.nombre; });
   let lista = [];
   hojasCompras_().forEach(function (sh) { lista = lista.concat(leerCompras_(sh, bares)); });
+  // Los reportes que no traen proveedor (Felicidad e Industrias por fecha)
+  // lo toman del codigo: a quien se le compro ese mismo articulo en otro
+  // reporte del mismo sistema (el que mas veces aparece).
+  const cuenta = {};
+  lista.forEach(function (x) {
+    if (!x.codigo || !x.proveedor) return;
+    const k = x.origen + "|" + x.codigo;
+    const c = (cuenta[k] = cuenta[k] || {});
+    c[x.proveedor] = (c[x.proveedor] || 0) + 1;
+  });
+  lista.forEach(function (x) {
+    if (x.proveedor || !x.codigo) return;
+    const c = cuenta[x.origen + "|" + x.codigo];
+    if (!c) return;
+    x.proveedor = Object.keys(c).sort(function (a, b) { return c[b] - c[a]; })[0];
+  });
   const ult = {};
   lista.forEach(function (x, i) {
     const k = [x.origen, x.codigo, norm_(x.nombre), x.proveedor].join("|");
@@ -532,10 +548,10 @@ function cargarCompras(destino, filas, reemplazar) {
       hay[k] = true;
       return true;
     });
-    // Si lo que ya habia tiene otros titulos (otro formato de reporte), se
-    // repiten los titulos antes de lo nuevo para que se lea bien.
-    const ultimosTitulos = sh.getDataRange().getValues().filter(function (r) { return columnasCompras_(r); }).pop();
-    if (agregar.length && (!ultimosTitulos || clave(ultimosTitulos.slice(0, ancho)) !== clave(datos[0]))) { agregar.unshift(datos[0]); titulosRepetidos = 1; }
+    // Lo nuevo va siempre con sus titulos arriba: aunque sean iguales a los
+    // de antes, cada reporte se lee aparte (en uno la columna GRUPO2 puede
+    // traer fechas y en otro bares).
+    if (agregar.length) { agregar.unshift(datos[0]); titulosRepetidos = 1; }
   }
   if (agregar.length) {
     if (sh.getMaxColumns() < ancho) sh.insertColumnsAfter(sh.getMaxColumns(), ancho - sh.getMaxColumns());
