@@ -563,7 +563,7 @@
 const APP_NAME = "Stock";
 // Versión publicada. Tiene que ser igual a la de stockbares/version.json:
 // si el archivo dice otra, la app se recarga sola con la versión nueva.
-const APP_VERSION = "2026-10-17.2";
+const APP_VERSION = "2026-10-17.3";
 // Quiénes usan la app y qué puede hacer cada uno.
 //   cargar: carga y corrige el stock de un día mientras está abierto.
 //   cerrar: cierra el stock de un día (después nadie lo puede cambiar).
@@ -743,13 +743,16 @@ let comprasNuevas = [];
 // La planilla manda solo los últimos días de stock: este es el más viejo
 // que mandó ("" = mandó todos). Lo de antes queda en la planilla.
 let conteosDesde = "";
+// Para los pedidos: bebidas que el bar compró y no están en el catálogo
+// ({ nombre, unidad, contenido, costo, proveedores, porProveedor }).
+let comprasPedido = [];
 
 function cacheKey(barName) { return KEY_PREFIX + "bar_" + slug(barName) + "_cache_v2"; }
 function syncKey(barName) { return KEY_PREFIX + "bar_" + slug(barName) + "_ultima_sync"; }
 
 function loadLocalCache() {
   conteos = []; productos = []; UNITS = [...DEFAULT_UNITS]; CANTS = [...DEFAULT_CANTS]; planillaUrl = ""; cierres = [];
-  pedidos = []; precios = {}; comprasNuevas = []; conteosDesde = ""; cacheGuardado = "";
+  pedidos = []; precios = {}; comprasNuevas = []; conteosDesde = ""; comprasPedido = []; cacheGuardado = "";
   if (!curBarName) return;
   const c = lsJson(cacheKey(curBarName), null);
   if (!c) return;
@@ -763,6 +766,7 @@ function loadLocalCache() {
   if (Array.isArray(c.pedidos)) pedidos = c.pedidos;
   if (c.precios && typeof c.precios === "object") precios = c.precios;
   if (Array.isArray(c.compras_nuevas)) comprasNuevas = c.compras_nuevas;
+  if (Array.isArray(c.compras_pedido)) comprasPedido = c.compras_pedido;
   cacheGuardado = estadoJson();
 }
 
@@ -771,7 +775,7 @@ function loadLocalCache() {
 let cacheGuardado = "";
 function estadoJson() {
   return JSON.stringify({ conteos, productos, unidades: UNITS, cantidades: CANTS, planilla: planillaUrl, cierres,
-    pedidos, precios, compras_nuevas: comprasNuevas, desde: conteosDesde });
+    pedidos, precios, compras_nuevas: comprasNuevas, desde: conteosDesde, compras_pedido: comprasPedido });
 }
 function saveLocalCache() {
   if (!curBarName) return false;
@@ -1041,6 +1045,7 @@ async function fetchAllFromSheet_(otraVez) {
     if (data.precios && typeof data.precios === "object") precios = data.precios;
     comprasNuevas = Array.isArray(data.compras_nuevas) ? data.compras_nuevas : [];
     conteosDesde = typeof data.desde === "string" ? data.desde : "";
+    comprasPedido = Array.isArray(data.compras_pedido) ? data.compras_pedido : [];
     applyOutboxLocally();
     const cambio = saveLocalCache();
     syncProblem = "";
@@ -1092,7 +1097,8 @@ async function precargarOtrosBares() {
         cantidades: Array.isArray(data.cantidades) && data.cantidades.length ? data.cantidades : [...DEFAULT_CANTS],
         planilla: typeof data.planilla === "string" ? data.planilla : "", cierres: Array.isArray(data.cierres) ? data.cierres : [],
         pedidos: Array.isArray(data.pedidos) ? data.pedidos : [], precios: data.precios && typeof data.precios === "object" ? data.precios : {},
-        compras_nuevas: Array.isArray(data.compras_nuevas) ? data.compras_nuevas : [], desde: typeof data.desde === "string" ? data.desde : "" }));
+        compras_nuevas: Array.isArray(data.compras_nuevas) ? data.compras_nuevas : [], desde: typeof data.desde === "string" ? data.desde : "",
+        compras_pedido: Array.isArray(data.compras_pedido) ? data.compras_pedido : [] }));
       lsSet(syncKey(b.nombre), String(Date.now()));
     }
   } finally {
@@ -1864,15 +1870,26 @@ function guardarBorrador(cat, b) {
   lsSet(borradorKey(), JSON.stringify(todos));
 }
 
+// En los pedidos están los productos del catálogo y, en Barra, además las
+// bebidas que se compraron y no están en el catálogo (el stock es solo el catálogo).
+function productosPedido(cat) {
+  const l = productosDe(cat);
+  if (cat !== "Barra") return l;
+  const ya = new Set(l.map(p => norm(p.nombre)));
+  return l.concat(comprasPedido.filter(x => x && x.nombre && !ya.has(norm(x.nombre)))
+    .map(x => ({ nombre: x.nombre, categoria: "Barra", unidad: x.unidad || "", contenido: x.contenido || "", deCompras: true })));
+}
+function prodPedido(n) { return prodByName(n) || productosPedido("Barra").find(p => p.nombre === n); }
+function infoPrecio(nombre) { return precios[nombre] || comprasPedido.find(x => x && x.nombre === nombre) || null; }
 // El costo de la última compra; con proveedor, el de la última compra a ese proveedor.
 function precioDe(nombre, prov) {
-  const x = precios[nombre];
+  const x = infoPrecio(nombre);
   if (!x) return null;
   const v = prov && x.porProveedor && typeof x.porProveedor[prov] === "number" ? x.porProveedor[prov] : x.costo;
   return typeof v === "number" && v > 0 ? v : null;
 }
 function proveedoresDeProd(nombre) {
-  const x = precios[nombre];
+  const x = infoPrecio(nombre);
   const l = x && Array.isArray(x.proveedores) ? x.proveedores.filter(Boolean) : [];
   return l.length ? l : [SIN_PROV];
 }
@@ -1882,10 +1899,10 @@ function sinPrecio() { return productos.filter(p => normCat(p.categoria) === "Ba
 // Proveedores de una categoría, por orden alfabético ("Sin proveedor" al final).
 function proveedoresDe(cat) {
   const l = [];
-  productosDe(cat).forEach(p => proveedoresDeProd(p.nombre).forEach(v => { if (!l.includes(v)) l.push(v); }));
+  productosPedido(cat).forEach(p => proveedoresDeProd(p.nombre).forEach(v => { if (!l.includes(v)) l.push(v); }));
   return l.filter(v => v !== SIN_PROV).sort((a, b) => a.localeCompare(b, "es")).concat(l.includes(SIN_PROV) ? [SIN_PROV] : []);
 }
-function productosDeProv(cat, prov) { return productosDe(cat).filter(p => proveedoresDeProd(p.nombre).includes(prov)); }
+function productosDeProv(cat, prov) { return productosPedido(cat).filter(p => proveedoresDeProd(p.nombre).includes(prov)); }
 
 function fmtPesos(n) { return "$\u00a0" + Math.round(Number(n)).toLocaleString("es-AR"); }
 
@@ -1896,12 +1913,12 @@ function lineasBorrador(cat) {
   const orden = proveedoresDe(cat);
   Object.keys(b.items).forEach(k => { const v = k.split(SEP)[0]; if (!orden.includes(v)) orden.push(v); });
   orden.forEach(prov => {
-    const nombres = productosDe(cat).map(p => p.nombre);
+    const nombres = productosPedido(cat).map(p => p.nombre);
     Object.keys(b.items).forEach(k => { const n = k.split(SEP)[1]; if (k.split(SEP)[0] === prov && !nombres.includes(n)) nombres.push(n); });
     nombres.forEach(n => {
       const q = b.items[prov + SEP + n];
       if (!(q > 0)) return;
-      const p = prodByName(n);
+      const p = prodPedido(n);
       const precio = precioDe(n, prov);
       out.push({ proveedor: prov, producto: n, cantidad: q, unidad: p ? p.unidad : "", precio: precio, subtotal: precio === null ? null : Math.round(q * precio * 100) / 100 });
     });
@@ -1944,7 +1961,7 @@ function renderPedWizard() {
     const c = document.getElementById("pdCats");
     c.innerHTML = CATEGORIAS.map(cat => {
       const n = Object.keys(borrador(cat).items).length;
-      const l = productosDe(cat).length;
+      const l = productosPedido(cat).length;
       return '<button class="choice ' + catCls(cat) + '" data-pdcat="' + esc(cat) + '"' + (l ? "" : " disabled") + '><span>' + esc(cat) +
         '<small>' + (l ? proveedoresDe(cat).length + (proveedoresDe(cat).length === 1 ? " proveedor" : " proveedores") : "No hay productos") + '</small></span>' +
         (n ? '<span class="pd-badge">' + (n === 1 ? "1 sin enviar" : n + " sin enviar") + '</span>' : "") + '</button>';

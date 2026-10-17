@@ -27,6 +27,8 @@
 //   - "Proveedores Felicidad e Industrias": el mismo reporte desglosado
 //     por proveedor (GRUPO2 = proveedor). Solo sirve para saber a quien se
 //     le compra cada codigo: de ahi no sale ningun precio ni producto.
+//   - "Proveedores de bebida": a quienes se les compra bebida (para saber
+//     que es bebida en los reportes que no traen Familia). Se corrige a mano.
 //   - "Equivalencias": Nombre en compras | Producto del stock. Para cuando
 //     Cuccina lo llama distinto que el stock (el nombre que vale es el del
 //     stock). Un mismo nombre de compras puede ir en varios renglones (uno
@@ -86,6 +88,16 @@ const SHEET_BARES = "Bares";
 const SHEET_PERSONAS = "Personas";
 const SHEET_EQUIV = "Equivalencias";
 const EQUIV_HEADERS = ["Nombre en compras", "Producto del stock"];
+// Los reportes de Felicidad e Industrias no dicen que es bebida: es bebida
+// lo que se le compra a uno de estos proveedores (alcanza con una parte del
+// nombre). La hoja se puede corregir a mano.
+const SHEET_PROV_BEBIDA = "Proveedores de bebida";
+const PROV_BEBIDA_HEADERS = ["Proveedor (o una parte del nombre)"];
+const PROV_BEBIDA_INICIALES = ["MOSTO", "PRINCA", "DILCOR", "MAGNUM", "CCU", "COCA COLA", "QUILMES", "CALVU", "LINDBERG",
+  "ATON BEER", "FERMENTUM", "BEMOV", "WINE", "VINOS", "VITIS", "VOCACION", "CATENA", "ZUCARDI", "CINCO RIOS", "BODEGA",
+  "SODA", "DIMATO", "HIELO", "AGUA LAS CONDES", "MONSERRAT", "PROVEEDOR BARRA", "LOLA MENTA"];
+// Lo que nunca es un producto para pedir, aunque venga de un proveedor de bebidas.
+const NO_ES_PRODUCTO_ = /flete|alquiler|servicio|certificado|mano de obra|^envio|comision|evento/i;
 const NO_ES_STOCK = "No es stock";
 const BARES_HEADERS = ["Bar", "Planilla", "WhatsApp del dueño"];
 const PERSONAS_HEADERS = ["Persona", "Rol", "Bares", "Clave", "Link de instalación"];
@@ -535,18 +547,44 @@ function precioPorUnidad_(p, prod) {
   return Math.round(p.precio * c.v * 100) / 100;
 }
 
+// Proveedores de bebida (hoja de la central; si no esta, los de siempre).
+let PROV_BEBIDA_ = null;
+function proveedoresDeBebida_() {
+  if (PROV_BEBIDA_) return PROV_BEBIDA_;
+  const sh = central_().getSheetByName(SHEET_PROV_BEBIDA);
+  const l = sh ? sh.getDataRange().getValues().slice(1).map(function (r) { return norm_(r[0]); }).filter(String) : [];
+  return PROV_BEBIDA_ = l.length || sh ? l : PROV_BEBIDA_INICIALES.map(norm_);
+}
+function hojaProvBebida_() {
+  const nueva = !central_().getSheetByName(SHEET_PROV_BEBIDA);
+  const sh = hojaCentral_(SHEET_PROV_BEBIDA, PROV_BEBIDA_HEADERS);
+  if (nueva) sh.getRange(2, 1, PROV_BEBIDA_INICIALES.length, 1).setValues(PROV_BEBIDA_INICIALES.map(function (v) { return [v]; }));
+  return sh;
+}
+function esDeBebida_(p, provBebida) {
+  if (p.familia) return true; // Archie y Hugo: ya viene solo lo de barra.
+  const v = norm_(p.proveedor);
+  return provBebida.some(function (x) { return v.indexOf(x) >= 0; });
+}
+function unidadDeMedida_(m) {
+  const t = norm_(m);
+  return /^lit/.test(t) ? "Litros" : /^kilo/.test(t) ? "Kilos" : /^unid/.test(t) ? "Unidades" : String(m || "");
+}
+
 // Para cada producto de Barra del catalogo del bar: el costo de la ultima
 // compra, sus proveedores (el mas reciente primero) y el ultimo costo de
-// cada uno.
-// Se busca por codigo (en las hojas de compras donde figura ese bar: los
-// codigos son de ese Cuccina) y si no, por nombre o por Equivalencias.
-function preciosDelCatalogo_(barNombre, catalogo) {
+// cada uno. Se busca por codigo (en las hojas de compras donde figura ese
+// bar: los codigos son de ese Cuccina) y si no, por nombre o por
+// Equivalencias. Ademas, para los pedidos: las bebidas que compro el bar y
+// no estan en su catalogo ("extras").
+function calcularPreciosBar_(barNombre, catalogo) {
   const eq = leerEquivalencias_();
   const nb = norm_(barNombre);
   const porNom = {}, porCod = {}, suyas = {};
   const precios = leerPrecios_();
   precios.forEach(function (p) { if (p.bares.indexOf(nb) >= 0 || norm_(p.origen) === nb) suyas[norm_(p.origen)] = true; });
-  precios.forEach(function (p) {
+  precios.forEach(function (p, i) {
+    p.i = i;
     if (p.codigo && suyas[norm_(p.origen)]) (porCod[p.codigo] = porCod[p.codigo] || []).push(p);
     const k = norm_(p.nombre);
     if (eq[k] === NO_ES_STOCK) return;
@@ -554,12 +592,13 @@ function preciosDelCatalogo_(barNombre, catalogo) {
     (eq[k] || []).forEach(function (v) { if (keys.indexOf(norm_(v)) < 0) keys.push(norm_(v)); });
     keys.forEach(function (x) { (porNom[x] = porNom[x] || []).push(p); });
   });
-  const out = {};
+  const out = {}, usados = {};
   catalogo.forEach(function (prod) {
-    // De las compras se toman solo bebidas: lo de Cocina no lleva precio.
-    if (prod.categoria !== "Barra") { out[prod.nombre] = { costo: null, proveedores: [], porProveedor: {} }; return; }
     let hits = ((prod.codigo && porCod[prod.codigo]) || porNom[norm_(prod.nombre)] || []).slice()
       .sort(function (a, b) { return b.fecha - a.fecha; });
+    hits.forEach(function (h) { usados[h.i] = true; });
+    // De las compras se toman solo bebidas: lo de Cocina no lleva precio.
+    if (prod.categoria !== "Barra") { out[prod.nombre] = { costo: null, proveedores: [], porProveedor: {} }; return; }
     // Si hay compras con proveedor, no se mezclan las que no lo traen.
     if (hits.some(function (h) { return h.proveedor && h.proveedor !== "Sin proveedor"; })) {
       hits = hits.filter(function (h) { return h.proveedor && h.proveedor !== "Sin proveedor"; });
@@ -571,8 +610,35 @@ function preciosDelCatalogo_(barNombre, catalogo) {
     });
     out[prod.nombre] = { costo: provs.length ? porProveedor[provs[0]] : null, proveedores: provs, porProveedor: porProveedor };
   });
-  return out;
+  // Extras: lo que compro este bar, es bebida y no esta en el catalogo.
+  const provBebida = proveedoresDeBebida_();
+  const cuentaVinos = catalogo.some(function (p) { return /vino/i.test(norm_(p.familia)); });
+  const enCatalogo = {};
+  catalogo.forEach(function (p) { enCatalogo[norm_(p.nombre)] = true; });
+  const grupos = {};
+  precios.forEach(function (p) {
+    if (usados[p.i]) return;
+    if (!(p.bares.indexOf(nb) >= 0 || norm_(p.origen) === nb)) return;
+    const k = norm_(p.nombre);
+    if (enCatalogo[k] || eq[k] === NO_ES_STOCK || NO_ES_PRODUCTO_.test(k)) return;
+    if (!p.proveedor || p.proveedor === "Sin proveedor" || !esDeBebida_(p, provBebida)) return;
+    if (!cuentaVinos && esVino_(p)) return;
+    (grupos[k] = grupos[k] || []).push(p);
+  });
+  const extras = Object.keys(grupos).map(function (k) {
+    const l = grupos[k].sort(function (a, b) { return b.fecha - a.fecha; });
+    // Si se compra por litro y el nombre dice la medida ("1000cc"), se pide
+    // por botella: precio por litro × lo que trae.
+    const m = String(l[0].nombre).match(/(\d+(?:[.,]\d+)?)\s*(cc|ml|lts?|l)\b/i);
+    const prod = m && /^lit/.test(norm_(l[0].medida)) ? { unidad: "Botellas", contenido: m[1].replace(",", ".") + " " + m[2].toLowerCase().replace(/^lts?$/, "l") } : null;
+    const porProveedor = {}, provs = [];
+    l.forEach(function (h) { if (provs.indexOf(h.proveedor) < 0) { provs.push(h.proveedor); porProveedor[h.proveedor] = prod ? precioPorUnidad_(h, prod) : h.precio; } });
+    return { nombre: l[0].nombre, unidad: prod ? prod.unidad : unidadDeMedida_(l[0].medida), contenido: prod ? prod.contenido : "",
+      costo: porProveedor[provs[0]], proveedores: provs, porProveedor: porProveedor };
+  }).sort(function (a, b) { return a.nombre.localeCompare(b.nombre); });
+  return { precios: out, extras: extras };
 }
+function preciosDelCatalogo_(barNombre, catalogo) { return calcularPreciosBar_(barNombre, catalogo).precios; }
 
 // Precios y "nuevos en las compras" de un bar, guardados en la memoria
 // rapida. Se vuelven a calcular si cambia el catalogo, las compras o las
@@ -582,8 +648,9 @@ function preciosDelBar_(bar, catalogo, conNuevos) {
     JSON.stringify(catalogo.map(function (p) { return [p.nombre, p.codigo, p.unidad, p.contenido, p.familia]; })), Utilities.Charset.UTF_8));
   const k = "pr|" + versionPrecios_() + "|" + huella + "|" + norm_(bar.nombre).slice(0, 60);
   let v = cacheGet_(k);
-  if (!v || !v.precios || (conNuevos && !Array.isArray(v.nuevos))) {
-    v = { precios: preciosDelCatalogo_(bar.nombre, catalogo), nuevos: conNuevos ? comprasNuevas_(bar.nombre, catalogo) : null };
+  if (!v || !v.precios || !Array.isArray(v.extras) || (conNuevos && !Array.isArray(v.nuevos))) {
+    const c = calcularPreciosBar_(bar.nombre, catalogo);
+    v = { precios: c.precios, extras: c.extras, nuevos: conNuevos ? comprasNuevas_(bar.nombre, catalogo) : null };
     cachePut_(k, v, CACHE_PRECIOS_SEG);
   }
   return v;
@@ -636,6 +703,7 @@ function onOpen() {
   hojaCentral_(SHEET_BARES, BARES_HEADERS);
   hojaCentral_(SHEET_PERSONAS, PERSONAS_HEADERS);
   hojaCentral_(SHEET_EQUIV, EQUIV_HEADERS);
+  hojaProvBebida_();
   hojaPedidosCentral_();
   SpreadsheetApp.getUi().createMenu("Stock bares")
     .addItem("Armar links de instalación", "armarLinks")
@@ -1249,7 +1317,7 @@ function abrirBar_(yo, barNombre) {
 }
 
 // Lo leido en un pedido anterior no sirve para este.
-function olvidar_() { PB_ = null; PRECIOS_ = null; EQUIV_ = null; SS = null; CACHE_LEIDO_ = {}; }
+function olvidar_() { PB_ = null; PRECIOS_ = null; EQUIV_ = null; PROV_BEBIDA_ = null; SS = null; CACHE_LEIDO_ = {}; }
 
 function doGet(e) {
   olvidar_();
@@ -1295,6 +1363,8 @@ function doGet_(e) {
       precios: pr.precios,
       whatsapp: bar.whatsapp,
       compras_nuevas: admin ? pr.nuevos : [],
+      // Para los pedidos: bebidas compradas que no estan en el catalogo.
+      compras_pedido: pr.extras,
       planilla: admin ? "https://docs.google.com/spreadsheets/d/" + bar.id + "/edit" : ""
     });
   }

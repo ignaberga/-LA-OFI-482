@@ -175,8 +175,17 @@ quiere armar.
 - (Hasta el 17/10/2026 el precio era el "Precio Unitario" del reporte; se
   cambió a total con impuestos ÷ cantidad, ver Precios.)
 - **Pedidos** (solo con la planilla central; los hacen encargados y Noel):
-  fecha y Barra/Cocina → proveedor → productos del catálogo con precio de
-  costo (o "sin precio") y total que se va sumando → Revisar → **"Enviar
+  fecha y Barra/Cocina → proveedor → productos con precio de costo (o "sin
+  precio") y total que se va sumando. **En los pedidos aparecen los
+  productos del catálogo y además, en Barra, las bebidas que ese bar compró
+  y no están en el catálogo** (`compras_pedido` en get_all; decisión de
+  Ignacio, 18/10/2026: el stock es solo el catálogo, los pedidos no). Si se
+  compran por litro y el nombre trae la medida ("1000cc"), se piden por
+  botella. Bebida: en Archie/Hugo, familia BARRA; en Felicidad e Industrias
+  (sin Familia), lo que se le compra a un proveedor de la hoja
+  **"Proveedores de bebida"** de la central (alcanza una parte del nombre;
+  se corrige a mano). Fletes, servicios, eventos, "No es stock" y los vinos
+  de los bares que no cuentan vinos no aparecen → Revisar → **"Enviar
   pedido"** → cartel "Pedido realizado con éxito" (sin señal: "guardado en
   el celular"). **Sin WhatsApp** (decisión de Noel, 17/10/2026). Todos van
   a la hoja **Pedidos de la planilla central** (acción `pedido_add`): Fecha
