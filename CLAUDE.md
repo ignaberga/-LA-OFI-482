@@ -109,12 +109,7 @@ quiere armar.
   título; GRUPO2 = fecha, SUBGRUPO2 = bar, trae CODIGO, **no trae
   proveedor** — pendiente que Noel diga si se puede sacar por proveedor).
   Las columnas GRUPO se reconocen por lo que dicen (fecha, bar o
-  proveedor), por separado en cada tanda cargada (cada carga repite sus
-  títulos). Mientras tanto, el proveedor sale **por código**: se carga
-  también el reporte viejo (hoja "completo", con proveedor) sin borrar, y
-  a cada artículo sin proveedor se le pone el proveedor al que más veces se
-  le compró ese código en la misma hoja de compras. Los que no aparecen
-  quedan "Sin proveedor" (después se ven).
+  proveedor).
 - **Vinos:** si el catálogo de un bar no tiene ninguna familia de vinos
   (Hugo: los vinos no se cuentan), los vinos de sus compras no aparecen en
   "Nuevos en las compras". Vino = comprado por **Unidad** y con la cepa en
