@@ -336,8 +336,8 @@ function rolesGrupos_(data, i, c, bares) {
 }
 
 // Lee una hoja de compras de Cuccina pegada tal cual. Precio = total ÷
-// cantidad (con impuestos). Lo bonificado (total 0) y las notas de credito
-// no cuentan. GRUPO2/SUBGRUPO2 pueden traer la fecha, el bar o el
+// cantidad (con impuestos). Lo bonificado (total 0), las notas de credito
+// y lo que no es de barra no cuentan. GRUPO2/SUBGRUPO2 pueden traer la fecha, el bar o el
 // proveedor segun como se saco el reporte: se reconoce por lo que dicen.
 function leerCompras_(sh, nombresBares) {
   const data = sh.getDataRange().getValues();
@@ -367,6 +367,11 @@ function leerCompras_(sh, nombresBares) {
       else if (c.prov < 0) prov = String(v).trim();
     });
     if (!nombre || /^total/i.test(nombre)) continue;
+    // Solo bebidas (e insumos de barra): en los reportes que traen Familia
+    // (Archie, Hugo), lo que no es de barra no cuenta. Los que no la traen
+    // (Felicidad e Industrias) se usan solo para los productos del catalogo
+    // de cada bar, que tiene solo bebidas.
+    if (c.familia >= 0 && !/barra/i.test(norm_(val(c.familia)))) continue;
     if (c.desc >= 0 && num_(val(c.desc)) >= 100) continue;
     if (c.tipo >= 0 && /^n\.? ?c\b|credito/i.test(norm_(val(c.tipo)))) continue;
     let precio = null;
@@ -530,8 +535,9 @@ function precioPorUnidad_(p, prod) {
   return Math.round(p.precio * c.v * 100) / 100;
 }
 
-// Para cada producto del catalogo del bar: el costo de la ultima compra,
-// sus proveedores (el mas reciente primero) y el ultimo costo de cada uno.
+// Para cada producto de Barra del catalogo del bar: el costo de la ultima
+// compra, sus proveedores (el mas reciente primero) y el ultimo costo de
+// cada uno.
 // Se busca por codigo (en las hojas de compras donde figura ese bar: los
 // codigos son de ese Cuccina) y si no, por nombre o por Equivalencias.
 function preciosDelCatalogo_(barNombre, catalogo) {
@@ -550,6 +556,8 @@ function preciosDelCatalogo_(barNombre, catalogo) {
   });
   const out = {};
   catalogo.forEach(function (prod) {
+    // De las compras se toman solo bebidas: lo de Cocina no lleva precio.
+    if (prod.categoria !== "Barra") { out[prod.nombre] = { costo: null, proveedores: [], porProveedor: {} }; return; }
     let hits = ((prod.codigo && porCod[prod.codigo]) || porNom[norm_(prod.nombre)] || []).slice()
       .sort(function (a, b) { return b.fecha - a.fecha; });
     // Si hay compras con proveedor, no se mezclan las que no lo traen.

@@ -98,7 +98,14 @@ quiere armar.
   producto se cuenta en botellas, el precio de la botella = precio por
   litro × Contenido del catálogo. De cada producto vale la **última compra**
   de cada proveedor; lo bonificado (total 0) y las notas de crédito no
-  cuentan. Se precalcula en la hoja **Precios** de la central al cargar
+  cuentan. **Solo bebidas** (decisión de Ignacio, en todos los reportes):
+  en los que traen Familia (Archie, Hugo) solo cuenta lo de familia BARRA
+  (BARRA COMPRAS, BARRA VENTAS, PRE PRODUCIDOS BARRA), y en todos los
+  bares solo los productos de **Barra** del catálogo llevan precio (los de
+  Cocina, como los de Archie, quedan sin precio ni proveedor en los
+  pedidos y no cuentan en "sin precio"). Felicidad e Industrias no trae
+  Familia: vale el catálogo de cada bar, que tiene solo bebidas e insumos
+  de barra. Se precalcula en la hoja **Precios** de la central al cargar
   compras (menú "Recalcular precios" si se editan a mano): la app no lee
   todas las compras en cada pedido. Búsqueda: por **código** (columna 7 del
   Catálogo) en las hojas de compras donde figura ese bar (los códigos son

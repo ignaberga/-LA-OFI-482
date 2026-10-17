@@ -319,7 +319,7 @@
           <span>Productos sin precio</span><span class="accordion-meta" id="countSinPrecio">0</span>
         </button>
         <div class="accordion-body" id="bodySinPrecio">
-          <div class="help-text">Estos productos del catálogo de este bar no tienen precio. El precio sale de la última compra en las hojas «Compras» de la planilla central (Sistema Bares), buscando el mismo nombre. Si en las compras figura con otro nombre, anotalo en la hoja Equivalencias. Mientras tanto, en los pedidos dicen «sin precio».</div>
+          <div class="help-text">Estos productos de Barra de este bar no tienen precio. El precio sale de la última compra en las hojas «Compras» de la planilla central (Sistema Bares), buscando el mismo nombre (o el código). Si en las compras figura con otro nombre, anotalo en la hoja Equivalencias. Mientras tanto, en los pedidos dicen «sin precio». De las compras se toman solo bebidas: lo de Cocina no lleva precio.</div>
           <div class="cfg-list" id="sinPrecioList"></div>
         </div>
       </div>
@@ -1876,8 +1876,9 @@ function proveedoresDeProd(nombre) {
   const l = x && Array.isArray(x.proveedores) ? x.proveedores.filter(Boolean) : [];
   return l.length ? l : [SIN_PROV];
 }
-// Productos del catálogo sin precio (para avisarle a quien arma el catálogo).
-function sinPrecio() { return productos.filter(p => precioDe(p.nombre) === null); }
+// Productos de Barra sin precio (para avisarle a quien arma el catálogo). De
+// las compras se toman solo bebidas: Cocina no lleva precio.
+function sinPrecio() { return productos.filter(p => normCat(p.categoria) === "Barra" && precioDe(p.nombre) === null); }
 // Proveedores de una categoría, por orden alfabético ("Sin proveedor" al final).
 function proveedoresDe(cat) {
   const l = [];
