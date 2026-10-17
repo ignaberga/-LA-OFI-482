@@ -269,6 +269,15 @@ function quien_(clave, fresco) {
   return p;
 }
 
+// La hoja "Compras Archie" es del bar aunque en Bares diga "Archi" o "ARCHIE".
+function mismoBar_(a, b) {
+  const x = norm_(a).replace(/[^a-z0-9]/g, ""), y = norm_(b).replace(/[^a-z0-9]/g, "");
+  if (!x || !y) return false;
+  if (x === y) return true;
+  const corto = x.length < y.length ? x : y, largo = x.length < y.length ? y : x;
+  return corto.length >= 4 && largo.length - corto.length <= 2 && largo.indexOf(corto) === 0;
+}
+
 function norm_(s) {
   return String(s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/\s+/g, " ").trim();
 }
@@ -582,7 +591,7 @@ function calcularPreciosBar_(barNombre, catalogo) {
   const nb = norm_(barNombre);
   const porNom = {}, porCod = {}, suyas = {};
   const precios = leerPrecios_();
-  precios.forEach(function (p) { if (p.bares.indexOf(nb) >= 0 || norm_(p.origen) === nb) suyas[norm_(p.origen)] = true; });
+  precios.forEach(function (p) { if (p.bares.indexOf(nb) >= 0 || mismoBar_(p.origen, nb)) suyas[norm_(p.origen)] = true; });
   precios.forEach(function (p, i) {
     p.i = i;
     if (p.codigo && suyas[norm_(p.origen)]) (porCod[p.codigo] = porCod[p.codigo] || []).push(p);
@@ -618,7 +627,7 @@ function calcularPreciosBar_(barNombre, catalogo) {
   const grupos = {};
   precios.forEach(function (p) {
     if (usados[p.i]) return;
-    if (!(p.bares.indexOf(nb) >= 0 || norm_(p.origen) === nb)) return;
+    if (!(p.bares.indexOf(nb) >= 0 || mismoBar_(p.origen, nb))) return;
     const k = norm_(p.nombre);
     if (enCatalogo[k] || eq[k] === NO_ES_STOCK || NO_ES_PRODUCTO_.test(k)) return;
     if (!p.proveedor || p.proveedor === "Sin proveedor" || !esDeBebida_(p, provBebida)) return;
@@ -677,10 +686,10 @@ function comprasNuevas_(barNombre, catalogo) {
   const cuentaVinos = catalogo.some(function (p) { return /vino/i.test(norm_(p.familia)); });
   const ult = {};
   leerPrecios_().forEach(function (p) {
-    const delBar = norm_(p.origen) === nb || p.bares.indexOf(nb) >= 0;
+    const delBar = mismoBar_(p.origen, nb) || p.bares.indexOf(nb) >= 0;
     if (!delBar) return;
     // Solo bebidas: en los reportes con Familia, la de barra.
-    if (p.familia ? !/barra/i.test(p.familia) : norm_(p.origen) !== nb) return;
+    if (p.familia ? !/barra/i.test(p.familia) : !mismoBar_(p.origen, nb)) return;
     if (!cuentaVinos && esVino_(p)) return;
     const k = norm_(p.nombre);
     if (enCatalogo[k] || eq[k] || (p.codigo && codigos[p.codigo])) return;
@@ -727,7 +736,8 @@ function cargarComprasVentana() {
   // no trae proveedor: piden tambien el reporte desglosado por proveedor.
   const bares = leerBares_();
   const lista = destinos.map(function (d) {
-    return { nombre: d, compartido: !bares.some(function (b) { return norm_(b.nombre) === norm_(d); }) };
+    // Archie y Hugo tienen su propio reporte (trae proveedor): un solo Excel.
+    return { nombre: d, compartido: !/^(archie|hugo)$/i.test(norm_(d)) && !bares.some(function (b) { return mismoBar_(b.nombre, d); }) };
   });
   const html = HtmlService.createHtmlOutput(VENTANA_COMPRAS.replace("__DESTINOS__", JSON.stringify(lista)))
     .setWidth(480).setHeight(580);
@@ -856,12 +866,13 @@ const VENTANA_COMPRAS = '<!DOCTYPE html><html><head><meta charset="utf-8"><base 
   'select,input[type=file]{width:100%;padding:6px;font-size:14px}#msg{margin-top:12px;line-height:1.4}' +
   'button{margin-top:16px;padding:10px 18px;font-size:15px;font-weight:bold;background:#7A2E3E;color:#fff;border:0;border-radius:8px;cursor:pointer}' +
   'button:disabled{opacity:.5}.chk{font-weight:normal;margin-top:12px}.err{color:#A33A2A}.ok{color:#2F6B45}' +
-  '.caja{border:1px solid #E0D8CF;border-radius:8px;padding:2px 10px 10px;margin-top:10px}</style></head><body>' +
+  '.caja{border:1px solid #E0D8CF;border-radius:8px;padding:2px 10px 10px;margin-top:10px}' +
+  '.elegido{margin-top:6px;font-size:13px;color:#6E6166}.elegido.si{color:#2F6B45;font-weight:bold}</style></head><body>' +
   '<label>¿De qué bar son las compras?</label><select id="destino"></select>' +
-  '<div class="caja"><label id="l1">Excel de Cuccina</label><input type="file" id="archivo" accept=".xlsx,.xls,.csv">' +
+  '<div class="caja"><label id="l1">Excel de Cuccina</label><input type="file" id="archivo" accept=".xlsx,.xls,.csv"><div class="elegido" id="nom0">Todavía no elegiste ningún Excel.</div>' +
   '<label id="lhoja" style="display:none">Hoja del Excel</label><select id="hoja" style="display:none"></select></div>' +
   '<div class="caja" id="caja2" style="display:none"><label>2. Reporte por proveedor<small>Solo para saber a quién se le compra cada producto (el precio sale del de arriba).</small></label>' +
-  '<input type="file" id="archivo2" accept=".xlsx,.xls,.csv">' +
+  '<input type="file" id="archivo2" accept=".xlsx,.xls,.csv"><div class="elegido" id="nom1">Todavía no elegiste ningún Excel.</div>' +
   '<label id="lhoja2" style="display:none">Hoja del Excel</label><select id="hoja2" style="display:none"></select></div>' +
   '<label class="chk"><input type="checkbox" id="reemplazar"> Borrar lo que había antes (si no, se agrega lo nuevo sin repetir)</label>' +
   '<button id="cargar" disabled>Cargar</button><div id="msg"></div>' +
@@ -870,7 +881,8 @@ const VENTANA_COMPRAS = '<!DOCTYPE html><html><head><meta charset="utf-8"><base 
   'DEST.forEach(function(x){var o=document.createElement("option");o.value=o.textContent=x.nombre;d.appendChild(o);});' +
   'function compartido(){var x=DEST.filter(function(y){return y.nombre===d.value;})[0];return !!(x&&x.compartido);}' +
   'function msg(t,c){var m=document.getElementById("msg");m.className=c||"";m.textContent=t;}' +
-  'function listo(){document.getElementById("cargar").disabled=!(libros[0]||(compartido()&&libros[1]));}' +
+  'function listo(){document.getElementById("cargar").disabled=!(libros[0]||(compartido()&&libros[1]));' +
+  '[0,1].forEach(function(n){var e=document.getElementById("nom"+n);e.className=libros[n]?"elegido si":"elegido";e.textContent=libros[n]?"✓ "+libros[n].archivo:"Todavía no elegiste ningún Excel.";});}' +
   'function verDestino(){var c=compartido();document.getElementById("caja2").style.display=c?"block":"none";' +
   'document.getElementById("l1").innerHTML=c?"1. Reporte por bar<small>El que trae las fechas: de ahí sale el precio.</small>":"Excel de Cuccina";if(!c)libros[1]=null;listo();}' +
   'd.addEventListener("change",verDestino);verDestino();' +
@@ -883,7 +895,7 @@ const VENTANA_COMPRAS = '<!DOCTYPE html><html><head><meta charset="utf-8"><base 
   'libro.SheetNames.forEach(function(x){var o=document.createElement("option");o.value=o.textContent=x;h.appendChild(o);});' +
   'var dep=libro.SheetNames.filter(function(x){return pref.test(x);})[0];' +
   'if(dep)elegida=dep;h.value=elegida;var ver=libro.SheetNames.length>1;h.style.display=ver?"block":"none";document.getElementById(lab).style.display=ver?"block":"none";' +
-  'libros[n]=libro;listo();msg("Listo para cargar.");e.target.value="";};r.readAsArrayBuffer(f);});}' +
+  'libro.archivo=f.name;libros[n]=libro;listo();msg("Listo para cargar.");};r.readAsArrayBuffer(f);});}' +
   'leer(0,"archivo","hoja","lhoja",/depurad|^compras/i);leer(1,"archivo2","hoja2","lhoja2",/prove/i);' +
   'function filasDe(n,sel){var libro=libros[n];if(!libro)return null;var hoja=libro.Sheets[document.getElementById(sel).value];' +
   'return XLSX.utils.sheet_to_json(hoja,{header:1,raw:true,defval:""}).map(function(r){return r.map(function(v){return v instanceof Date?fecha(v):v;});})' +
@@ -891,7 +903,7 @@ const VENTANA_COMPRAS = '<!DOCTYPE html><html><head><meta charset="utf-8"><base 
   'document.getElementById("cargar").addEventListener("click",function(){' +
   'var f1=filasDe(0,"hoja"),f2=compartido()?filasDe(1,"hoja2"):null;if(!f1&&!f2)return;' +
   'var b=this;b.disabled=true;msg("Cargando "+((f1?f1.length-1:0)+(f2?f2.length-1:0))+" renglones…");' +
-  'google.script.run.withSuccessHandler(function(res){libros=[null,null];listo();' +
+  'google.script.run.withSuccessHandler(function(res){libros=[null,null];listo();document.getElementById("archivo").value="";document.getElementById("archivo2").value="";' +
   'var t="Listo: "+res.agregados+" renglones nuevos en la hoja «"+res.hoja+"»"+(res.repetidos?" ("+res.repetidos+" ya estaban y no se repitieron)":"");' +
   'if(res.proveedores)t+=" y "+res.proveedores.agregados+" en «"+res.proveedores.hoja+"»"+(res.proveedores.repetidos?" ("+res.proveedores.repetidos+" ya estaban)":"");' +
   'msg(t+". La hoja «Precios» quedó con "+res.precios+" precios y la app ya los toma.","ok");})' +
