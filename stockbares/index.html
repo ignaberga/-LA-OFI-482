@@ -563,7 +563,7 @@
 const APP_NAME = "Stock";
 // Versión publicada. Tiene que ser igual a la de stockbares/version.json:
 // si el archivo dice otra, la app se recarga sola con la versión nueva.
-const APP_VERSION = "2026-10-17.3";
+const APP_VERSION = "2026-10-18.1";
 // Quiénes usan la app y qué puede hacer cada uno.
 //   cargar: carga y corrige el stock de un día mientras está abierto.
 //   cerrar: cierra el stock de un día (después nadie lo puede cambiar).
@@ -840,6 +840,11 @@ function isApplied(op, data) {
     case "config_add": return listaDe(data, p.list).some(v => String(v) === String(p.value));
     case "config_remove": return !listaDe(data, p.list).some(v => String(v) === String(p.value));
     case "pedido_add": return p.items.every(it => (data.pedidos || []).some(x => sameId(x.id, it.id)));
+    case "pedido_delete": return !(data.pedidos || []).some(x => String(x.pedido || x.id) === String(p.pedido));
+    case "pedido_edit": {
+      const hay = (data.pedidos || []).filter(x => String(x.pedido || x.id) === String(p.pedido));
+      return hay.length === p.items.length && p.items.every(it => hay.some(x => sameId(x.id, it.id) && Number(x.cantidad) === Number(it.cantidad)));
+    }
     case "equiv_set": return !(data.compras_nuevas || []).some(x => norm(x.nombre) === norm(p.compra));
   }
   return false;
@@ -888,6 +893,12 @@ function applyOp(op) {
       break;
     case "equiv_set":
       comprasNuevas = comprasNuevas.filter(x => norm(x.nombre) !== norm(p.compra));
+      break;
+    case "pedido_delete":
+      pedidos = pedidos.filter(x => String(x.pedido || x.id) !== String(p.pedido));
+      break;
+    case "pedido_edit":
+      pedidos = pedidos.filter(x => String(x.pedido || x.id) !== String(p.pedido)).concat(p.items);
       break;
     case "pedido_add":
       p.items.forEach(it => { if (!pedidos.some(x => sameId(x.id, it.id))) pedidos = pedidos.concat([it]); });
@@ -1211,6 +1222,17 @@ function fechasConStock() {
   return Array.from(new Set(conteos.map(c => c.fecha).concat(cierres.map(c => c.fecha)))).sort().reverse();
 }
 // Cuántos productos de esa parte (y familia) ya tienen número ese día.
+// Qué se contó ese día en cada categoría: "Completo", "Top 10" o nada.
+function modoDelDia(fecha, cat) {
+  let m = "";
+  conteos.forEach(c => { if (c.fecha === fecha && normCat(c.categoria) === cat) m = m === "Completo" || c.grupo !== "Top 10" ? "Completo" : "Top 10"; });
+  return m;
+}
+// Los productos que corresponden a lo contado ese día (para ver qué falta).
+function productosDelDia(fecha, cat) {
+  const m = modoDelDia(fecha, cat);
+  return m ? productosDe(cat, m === "Top 10" ? "Top 10" : null) : [];
+}
 function avance(fecha, cat, parte, familia) {
   const s = stockDelDia(fecha);
   const l = productosDe(cat, parte, familia);
@@ -1218,7 +1240,7 @@ function avance(fecha, cat, parte, familia) {
 }
 function faltanDelDia(fecha) {
   const s = stockDelDia(fecha);
-  return productos.filter(p => !s[p.nombre]).map(p => p.nombre);
+  return CATEGORIAS.flatMap(cat => productosDelDia(fecha, cat)).filter(p => !s[p.nombre]).map(p => p.nombre);
 }
 
 // ============================================================
@@ -1231,8 +1253,8 @@ function diaHtml(fecha) {
   const cierre = cierreDe(fecha);
   const abierto = !cierre;
   const resumen = CATEGORIAS.map(cat => {
-    const l = productosDe(cat);
-    return l.length ? cat + ": " + l.filter(p => s[p.nombre]).length + " de " + l.length : "";
+    const l = productosDelDia(fecha, cat);
+    return l.length ? cat + (modoDelDia(fecha, cat) === "Top 10" ? " (Top 10)" : "") + ": " + l.filter(p => s[p.nombre]).length + " de " + l.length : "";
   }).filter(Boolean).join(" · ");
   const ver = diasAbiertos.has(fecha);
   return '<details class="group" data-dia="' + esc(fecha) + '"' + (ver ? " open" : "") + '><summary>' +
@@ -1247,7 +1269,10 @@ function diaBody(fecha) {
   const abierto = !cierre;
   let body = "";
   CATEGORIAS.forEach(cat => familiasDe(cat).forEach(f => {
-    const l = productosDe(cat, null, f);
+    // Solo lo que se contó ese día: si fue Top 10, solo los 10.
+    const delDia = new Set(productosDelDia(fecha, cat).map(p => p.nombre));
+    const l = productosDe(cat, null, f).filter(p => delDia.has(p.nombre));
+    if (!l.length) return;
     body += '<div class="day-sub">' + esc(cat) + ' · ' + esc(f) + '</div>';
     body += l.map(p => {
       if (!s[p.nombre]) return '<div class="g-line falta"><span>' + esc(p.nombre) + '</span><span>falta</span></div>';
@@ -1955,7 +1980,9 @@ function renderPedWizard() {
   if (pdStep > 1) crumb.push("Pedido " + curBarName + " · " + pdCat + " · " + dayLabelLong(b.fecha));
   if (pdStep === 3) crumb.push(pdProv);
   document.getElementById("pdCrumb").textContent = crumb.join(" · ");
-  document.getElementById("pdTitle").textContent = pdStep === 1 ? "Hacer pedido" : pdStep === 2 ? "¿A qué proveedor?" : pdStep === 3 ? pdProv : "Revisar y enviar";
+  const editando = b && b.editando;
+  document.getElementById("pdTitle").textContent = pdStep === 1 ? "Hacer pedido" : pdStep === 2 ? (editando ? "Modificar pedido" : "¿A qué proveedor?") : pdStep === 3 ? pdProv : "Revisar y enviar";
+  document.getElementById("pdEnviar").textContent = editando ? "Guardar cambios" : "Enviar pedido";
 
   if (pdStep === 1) {
     const c = document.getElementById("pdCats");
@@ -2097,22 +2124,24 @@ document.getElementById("pdEnviar").addEventListener("click", () => {
   if (!lineas.length) return;
   if (!phoneOwner) { err.textContent = "Este celular no sabe quién lo usa. Abrí de nuevo tu link de instalación."; err.style.display = "block"; return; }
   const b = borrador(pdCat);
-  const pedido = newId();
+  const editando = b.editando || "";
+  const pedido = editando || newId();
   const cargado = nowStamp();
   const nota = document.getElementById("pdNota").value.trim();
-  const items = lineas.map((l, i) => Object.assign({ id: pedido + "-" + i, pedido: pedido, fecha: b.fecha, categoria: pdCat }, l,
-    { persona: phoneOwner, nota: nota, cargado: cargado }));
+  const base = editando ? pedido + "-m" + Date.now().toString(36) : pedido;
+  const items = lineas.map((l, i) => Object.assign({ id: base + "-" + i, pedido: pedido, fecha: b.fecha, categoria: pdCat }, l,
+    { persona: phoneOwner, nota: nota, cargado: cargado, estado: "En espera" }));
   guardarBorrador(pdCat, null);
   document.getElementById("pdNota").value = "";
   closeOverlay("pedOverlay");
   showTab("pedidos");
-  const op = queueChange("pedido_add", { items: items });
-  avisarEnvio(op);
+  const op = editando ? queueChange("pedido_edit", { pedido: pedido, items: items }) : queueChange("pedido_add", { items: items });
+  avisarEnvio(op, editando ? "Pedido modificado" : "Pedido realizado con éxito");
 });
 
 // Después de enviar: espera a que la planilla confirme y lo dice en grande.
 // Sin señal queda guardado en el celular y se manda solo.
-function avisarEnvio(op) {
+function avisarEnvio(op, titulo) {
   const box = document.getElementById("pedidoOk");
   const mostrar = (cls, html) => { box.className = "pedido-ok show " + cls; box.innerHTML = html; };
   mostrar("enviando", "Enviando el pedido…");
@@ -2120,7 +2149,7 @@ function avisarEnvio(op) {
   let avisado = false;
   const mirar = () => {
     const pendiente = outbox.some(o => o.opId === op.opId);
-    if (!pendiente) { mostrar("ok", "<strong>✓ Pedido realizado con éxito</strong>Ya está en la planilla central."); setTimeout(() => box.className = "pedido-ok", 6000); return; }
+    if (!pendiente) { mostrar("ok", "<strong>✓ " + esc(titulo || "Pedido realizado con éxito") + "</strong>Ya está en la planilla central."); setTimeout(() => box.className = "pedido-ok", 6000); return; }
     if (!avisado && (!flushing && Date.now() - inicio > 3000 || Date.now() - inicio > 20000)) {
       avisado = true;
       mostrar("espera", "<strong>Pedido guardado en el celular</strong>No hay conexión con la planilla: se manda solo cuando vuelva la señal.");
@@ -2136,13 +2165,17 @@ document.querySelectorAll("#pedOverlay [data-pdrevisar]").forEach(x => x.addEven
   if (!lineasBorrador(pdCat).length) { showToast("Todavía no anotaste nada"); return; }
   goPd(4);
 }));
-document.querySelectorAll("#pedOverlay [data-pdclose]").forEach(x => x.addEventListener("click", () => closeOverlay("pedOverlay")));
+document.querySelectorAll("#pedOverlay [data-pdclose]").forEach(x => x.addEventListener("click", () => {
+  // Si se estaba modificando un pedido y se cierra, el pedido queda como estaba.
+  if (pdCat && borrador(pdCat).editando) guardarBorrador(pdCat, null);
+  closeOverlay("pedOverlay");
+}));
 document.getElementById("openPedido").addEventListener("click", openPedido);
 
 // El estado lo pone Noel en la hoja Pedidos de la central (por renglón).
 function estadoPedido(items) {
   const est = items.map(x => String(x.estado || "En espera"));
-  if (outbox.some(o => o.action === "pedido_add" && o.payload.items.some(x => x.pedido === items[0].pedido))) return { txt: "SIN ENVIAR", cls: "abierto" };
+  if (pedidoPendiente(idPedido(items[0]))) return { txt: "SIN ENVIAR", cls: "abierto" };
   if (est.every(e => /recib/i.test(e))) return { txt: "RECIBIDO", cls: "cerrado" };
   if (est.every(e => /cancel/i.test(e))) return { txt: "CANCELADO", cls: "cancelado" };
   if (est.some(e => /recib/i.test(e))) return { txt: "RECIBIDO EN PARTE", cls: "abierto" };
@@ -2189,7 +2222,8 @@ function renderPedidos() {
   }).join("");
   // El detalle se dibuja al abrir la tarjeta; las abiertas siguen abiertas.
   c.querySelectorAll("details[data-ped]").forEach((d, i) => {
-    const llenar = () => { const body = d.querySelector(".g-body"); if (!body.innerHTML) body.innerHTML = pedidoBody(mostrados[i]); };
+    const llenar = () => { const body = d.querySelector(".g-body"); if (!body.innerHTML) { body.innerHTML = pedidoBody(mostrados[i]); bindPedido(body, mostrados[i]); } };
+    if (d.open) bindPedido(d.querySelector(".g-body"), mostrados[i]);
     d.querySelector("summary").addEventListener("click", () => { if (!d.open) llenar(); });
     d.addEventListener("toggle", () => {
       const k = d.getAttribute("data-ped");
@@ -2204,9 +2238,54 @@ const pedidosAbiertos = new Set();
 function pedidoBody(items) {
   const it = items[0];
   const t = totalDe(items);
+  const ed = puedeEditar(items);
   return lineasHtml(items) +
     (t.sinPrecio ? '<div class="g-extra">' + (t.sinPrecio === 1 ? "1 producto sin precio, no está" : t.sinPrecio + " productos sin precio, no están") + ' en el total.</div>' : "") +
-    (it.nota ? '<div class="g-extra">Nota: ' + esc(it.nota) + '</div>' : "");
+    (it.nota ? '<div class="g-extra">Nota: ' + esc(it.nota) + '</div>' : "") +
+    (ed ? '<button class="btn-edit" data-pdmod>Modificar pedido</button><button class="btn-del" data-pdborrar>Borrar pedido</button>' : "");
+}
+const idPedido = x => String(x.pedido || x.id);
+function pedidoPendiente(pid) {
+  return outbox.some(o => (o.action === "pedido_add" && o.payload.items.some(x => idPedido(x) === pid)) ||
+    ((o.action === "pedido_edit" || o.action === "pedido_delete") && String(o.payload.pedido) === pid));
+}
+// Se puede modificar o borrar mientras esté "En espera" (si Noel ya lo marcó
+// Recibido o Cancelado, queda fijo). El encargado, solo los suyos.
+function puedeEditar(items) {
+  if (!central || !can("pedir")) return false;
+  const it = items[0];
+  const pendiente = pedidoPendiente(idPedido(it));
+  if (!pendiente && items.some(x => x.estado === undefined)) return false; // pedidos viejos de la planilla del bar
+  if (items.some(x => x.estado && x.estado !== "En espera")) return false;
+  return miRol === "Administrador" || it.persona === phoneOwner;
+}
+function bindPedido(body, items) {
+  const mod = body.querySelector("[data-pdmod]"), bor = body.querySelector("[data-pdborrar]");
+  if (mod) mod.addEventListener("click", () => modificarPedido(items));
+  if (bor) bor.addEventListener("click", () => {
+    if (!confirm("¿Estás seguro de que querés borrar el pedido del " + dayLabelLong(items[0].fecha) + "?\n\n" +
+      (items.length === 1 ? "Tiene 1 producto." : "Tiene " + items.length + " productos.") + " Se saca de la planilla y no se puede deshacer.")) return;
+    queueChange("pedido_delete", { pedido: idPedido(items[0]) });
+    showToast("Pedido borrado");
+  });
+}
+// Modificar: el pedido vuelve al armado (con sus cantidades) y al enviarlo
+// reemplaza al de la planilla.
+function modificarPedido(items) {
+  const it = items[0];
+  const cat = normCat(it.categoria) || "Barra";
+  const pid = idPedido(it);
+  const antes = borrador(cat);
+  if (Object.keys(antes.items).length && antes.editando !== pid &&
+    !confirm("Tenés un pedido de " + cat + " a medio armar sin enviar. Si modificás este, ese se descarta. ¿Seguís?")) return;
+  const b = { fecha: it.fecha, items: {}, editando: pid, nota: it.nota || "" };
+  items.forEach(x => { b.items[(x.proveedor || SIN_PROV) + SEP + x.producto] = Number(x.cantidad); });
+  guardarBorrador(cat, b);
+  pdCat = cat; pdProv = "";
+  document.getElementById("pdFecha").value = it.fecha;
+  document.getElementById("pdNota").value = it.nota || "";
+  document.getElementById("pedOverlay").classList.add("open");
+  goPd(2);
 }
 document.getElementById("pedidoMore").addEventListener("click", () => { pedidoLimit += 15; renderPedidos(); });
 

@@ -38,7 +38,9 @@ quiere armar.
   (cantidad × contenido) → Guardar. Si la fecha ya tiene stock, se abre ese
   mismo con lo cargado; se guardan solo los cambios (vale el último de cada
   producto en esa fecha). Inicio e Historial: una tarjeta por día, por
-  familia, con litros.
+  familia, con litros. La tarjeta muestra solo lo que se contó ese día: la
+  categoría que no se contó no aparece; si fue Top 10, solo los 10 (con
+  "falta" en los que no); si fue Completo, toda la categoría.
 - **Cerrar:** el encargado (o Noel) cierra el stock del día desde la carga o
   la tarjeta, con "¿Estás seguro…?". Cerrado = nadie lo modifica; la
   planilla rechaza cargas en un día cerrado. Solo **Noel** reabre y borra un
@@ -198,8 +200,13 @@ quiere armar.
   Precio | Subtotal | Persona | Nota | Cargado | **Estado** | ID, con
   filtro. Estado (lista: En espera / Recibido / Cancelado) lo pone Noel por
   renglón y pinta el renglón amarillo / verde / rojo; la app lo muestra en
-  "Pedidos hechos". Los pedidos viejos que quedaron en la hoja Pedidos de
-  cada bar se siguen viendo. El borrador queda en el celular
+  "Pedidos hechos". **Modificar / Borrar pedido** (18/10/2026): desde la
+  tarjeta, solo mientras todo esté "En espera" (Recibido o Cancelado queda
+  fijo); el encargado solo los suyos, el Administrador cualquiera. Modificar
+  vuelve al armado con las cantidades y "Guardar cambios" reemplaza los
+  renglones (`pedido_edit`); Borrar los saca de la planilla
+  (`pedido_delete`). Los pedidos viejos que quedaron en la hoja Pedidos de
+  cada bar se siguen viendo (no se modifican). El borrador queda en el celular
   (`stockbares_bar_<bar>_pedido_borrador`).
 - **Velocidad (17/10/2026, pedido de Ignacio):**
   - Planilla central: memoria rápida de Google (CacheService) para

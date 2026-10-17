@@ -80,8 +80,8 @@ const ROL_ENCARGADO = "Encargado";
 // Que puede hacer cada rol (acciones que manda la app).
 const ACCIONES_ROL = {
   "Administrador": ["add", "cerrar", "reabrir", "delete_dia", "delete_carga", "replace_carga", "product_set",
-    "product_remove", "config_add", "config_remove", "pedido_add", "equiv_set"],
-  "Encargado": ["add", "cerrar", "pedido_add"]
+    "product_remove", "config_add", "config_remove", "pedido_add", "pedido_edit", "pedido_delete", "equiv_set"],
+  "Encargado": ["add", "cerrar", "pedido_add", "pedido_edit", "pedido_delete"]
 };
 
 const SHEET_BARES = "Bares";
@@ -1476,7 +1476,7 @@ function doPost(e) {
   // no hace falta abrir la del bar.
   let barAbierto;
   try {
-    const soloCentral = action === "pedido_add" || action === "equiv_set";
+    const soloCentral = /^pedido_|^equiv_set$/.test(action);
     barAbierto = soloCentral ? barPermitido_(yo, body.bar) : abrirBar_(yo, body.bar);
   } catch (err) {
     return jsonOut_({ ok: false, error: String(err) });
@@ -1527,6 +1527,41 @@ function doPost(e) {
       if (nuevas.length) {
         lugar_(sh, ultima + nuevas.length, 0);
         sh.getRange(ultima + 1, 1, nuevas.length, PEDIDOS_CENTRAL_HEADERS.length).setValues(nuevas);
+      }
+
+    } else if (action === "pedido_edit" || action === "pedido_delete") {
+      // Modificar o borrar un pedido: solo mientras todo este "En espera", y
+      // el encargado solo los suyos. Borrar lo saca de la planilla.
+      const sh = hojaPedidosCentral_();
+      const pid = String(body.pedido || "");
+      const data = sh.getDataRange().getValues();
+      const nb = norm_(barAbierto.nombre);
+      const filas = [];
+      for (let i = 1; i < data.length; i++) {
+        if (String(data[i][2]) === pid && norm_(data[i][1]) === nb) filas.push(i + 1);
+      }
+      const suyas = filas.map(function (f) { return data[f - 1]; });
+      if (suyas.some(function (r) { return String(r[COL_ESTADO - 1] || "En espera") !== "En espera"; })) {
+        return jsonOut_({ ok: false, error: "el pedido ya fue recibido o cancelado", descartar: true });
+      }
+      if (yo.rol !== ROL_ADMIN && suyas.some(function (r) { return String(r[10]) !== persona; })) {
+        return jsonOut_({ ok: false, error: "sin permiso", descartar: true });
+      }
+      // Se borran de abajo hacia arriba (los renglones de un pedido van juntos).
+      for (let j = filas.length - 1; j >= 0; j--) {
+        let k = j;
+        while (k > 0 && filas[k - 1] === filas[k] - 1) k--;
+        sh.deleteRows(filas[k], filas[j] - filas[k] + 1);
+        j = k;
+      }
+      if (action === "pedido_edit") {
+        const nuevas = (body.items || []).filter(function (p) { return p && p.id; })
+          .map(function (p) { p.persona = suyas.length ? String(suyas[0][10]) : persona; p.pedido = pid; return filaPedidoCentral_(p, barAbierto.nombre); });
+        if (nuevas.length) {
+          const ultima = sh.getLastRow();
+          lugar_(sh, ultima + nuevas.length, 0);
+          sh.getRange(ultima + 1, 1, nuevas.length, PEDIDOS_CENTRAL_HEADERS.length).setValues(nuevas);
+        }
       }
 
     } else if (action === "equiv_set") {
