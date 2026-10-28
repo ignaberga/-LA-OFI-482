@@ -208,6 +208,19 @@ quiere armar.
   (`pedido_delete`). Los pedidos viejos que quedaron en la hoja Pedidos de
   cada bar se siguen viendo (no se modifican). El borrador queda en el celular
   (`stockbares_bar_<bar>_pedido_borrador`).
+  **Armado por familias (pedido de Noel, 28/10/2026):** igual que el
+  stock: fecha → Barra/Cocina → familias en el orden del Catálogo y al
+  final "Otros (de las compras)" → productos de la familia por orden
+  alfabético, con un buscador arriba que busca en todas. El proveedor se
+  pone solo (el de la última compra); si al producto se le compra a
+  varios, hay una lista para cambiarlo (cambia el precio). Sin compras:
+  "Sin proveedor". A la hoja Pedidos llega **igual que antes** (un renglón
+  por producto con su proveedor; Noel pidió que no cambie).
+  **Hoja "Resumen de pedidos"** de la central (`resumirPedidos_`): Desde
+  en B1 y Hasta en B2 (las cambia Noel y se rearma sola, `onEdit`); por
+  proveedor → producto, una columna por bar, Total, Precio, Plata
+  estimada y un renglón "Total <proveedor>" ("Sin proveedor" al final).
+  No cuenta los Cancelados. Se rearma también con cada pedido_*.
 - **Velocidad (17/10/2026, pedido de Ignacio):**
   - Planilla central: memoria rápida de Google (CacheService) para
     Personas y Bares (10 min) y los precios de cada bar (6 h, clave con la

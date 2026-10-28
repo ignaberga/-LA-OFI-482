@@ -212,6 +212,7 @@ function onEdit(e) {
     const n = e && e.range ? e.range.getSheet().getName() : "";
     if (n === SHEET_PERSONAS || n === SHEET_BARES) cacheBorrar_(["pb"]);
     if (n === SHEET_EQUIV || n === SHEET_PRECIOS || /^(compras|proveedores)\b/i.test(n)) nuevaVersionPrecios_();
+    if (n === SHEET_PEDIDOS || (n === SHEET_RESUMEN_PED && e.range.getRow() <= 2)) resumirPedidos_();
   } catch (err) {}
 }
 
@@ -714,6 +715,7 @@ function onOpen() {
   hojaCentral_(SHEET_EQUIV, EQUIV_HEADERS);
   hojaProvBebida_();
   hojaPedidosCentral_();
+  if (!central_().getSheetByName(SHEET_RESUMEN_PED)) resumirPedidos_();
   SpreadsheetApp.getUi().createMenu("Stock bares")
     .addItem("Armar links de instalación", "armarLinks")
     .addItem("Cargar compras (Excel de Cuccina)", "cargarComprasVentana")
@@ -1167,6 +1169,85 @@ function hojaPedidosCentral_() {
   sh.setConditionalFormatRules([regla("Recibido", "#D9EAD3"), regla("Cancelado", "#F4CCCC"), regla("En espera", "#FFF2CC")]);
   sh.getRange(1, 1, sh.getMaxRows(), n).createFilter();
   return sh;
+}
+
+// Hoja "Resumen de pedidos": Noel pone Desde y Hasta (B1 y B2) y se arma
+// sola, por proveedor y producto, con una columna por bar, el total y la
+// plata estimada. No cuenta los Cancelados. Se rearma al cambiar las
+// fechas, al cambiar algo en la hoja Pedidos y con cada pedido de la app.
+const SHEET_RESUMEN_PED = "Resumen de pedidos";
+const RESPED_FILA = 5;
+function hojaResumenPedidos_() {
+  const c = central_();
+  let sh = c.getSheetByName(SHEET_RESUMEN_PED);
+  if (sh) return sh;
+  sh = c.insertSheet(SHEET_RESUMEN_PED);
+  const hoy = new Date();
+  const desde = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate() - 7);
+  sh.getRange(1, 1, 3, 2).setValues([["Desde", desde], ["Hasta", new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate())],
+    ["Cambiá las fechas y se arma solo. No cuenta los pedidos Cancelados.", ""]]);
+  sh.getRange(1, 1, 2, 1).setFontWeight("bold");
+  sh.getRange(1, 2, 2, 1).setNumberFormat("dd/mm/yyyy").setBackground("#FFF2CC");
+  sh.getRange(3, 1).setFontColor("#6E6166");
+  return sh;
+}
+function resumirPedidos_() {
+  const sh = hojaResumenPedidos_();
+  const ped = central_().getSheetByName(SHEET_PEDIDOS);
+  const fechas = sh.getRange(1, 2, 2, 1).getValues();
+  const desde = fechaMs_(fechas[0][0]), hasta = fechaMs_(fechas[1][0]);
+  const filas = ped ? ped.getDataRange().getValues().slice(1) : [];
+  const bares = leerBares_().map(function (b) { return b.nombre; });
+  const usados = {}, grupos = {};
+  filas.forEach(function (r) {
+    if (!String(r[5] || "").trim() || String(r[COL_ESTADO - 1]) === "Cancelado") return;
+    const f = fechaMs_(r[0]);
+    if (!f || (desde && f < desde) || (hasta && f > hasta)) return;
+    const prov = String(r[4] || "").trim() || "Sin proveedor", prod = String(r[5]).trim(), bar = String(r[1]).trim();
+    usados[bar] = true;
+    const k = prov + "\u0001" + prod;
+    const g = grupos[k] = grupos[k] || { prov: prov, prod: prod, unidad: String(r[7] || ""), bares: {}, cant: 0, plata: 0, conPrecio: 0 };
+    const q = num_(r[6]);
+    g.bares[bar] = (g.bares[bar] || 0) + q;
+    g.cant += q;
+    if (r[9] !== "" && r[9] !== null) { g.plata += num_(r[9]); g.conPrecio += q; }
+  });
+  const cols = bares.filter(function (b) { return usados[b]; })
+    .concat(Object.keys(usados).filter(function (b) { return bares.indexOf(b) < 0; }));
+  const head = ["Proveedor", "Producto", "Unidad"].concat(cols).concat(["Total", "Precio", "Plata estimada"]);
+  const lista = Object.keys(grupos).map(function (k) { return grupos[k]; }).sort(function (a, b) {
+    const sa = a.prov === "Sin proveedor" ? 1 : 0, sb = b.prov === "Sin proveedor" ? 1 : 0;
+    return sa - sb || a.prov.localeCompare(b.prov) || a.prod.localeCompare(b.prod);
+  });
+  const out = [head], negrita = [head.map(function () { return "bold"; })], fondo = [head.map(function () { return "#EEEAE5"; })];
+  let i = 0;
+  while (i < lista.length) {
+    const prov = lista[i].prov;
+    let plata = 0;
+    for (; i < lista.length && lista[i].prov === prov; i++) {
+      const g = lista[i];
+      plata += g.plata;
+      out.push([g.prov, g.prod, g.unidad].concat(cols.map(function (b) { return g.bares[b] || ""; }))
+        .concat([g.cant, g.conPrecio ? Math.round(g.plata / g.conPrecio * 100) / 100 : "sin precio", g.plata || ""]));
+      negrita.push(head.map(function () { return "normal"; }));
+      fondo.push(head.map(function () { return "#FFFFFF"; }));
+    }
+    const tot = head.map(function () { return ""; });
+    tot[0] = "Total " + prov; tot[head.length - 1] = plata || "";
+    out.push(tot);
+    negrita.push(head.map(function () { return "bold"; }));
+    fondo.push(head.map(function () { return "#F7F5F2"; }));
+  }
+  if (out.length === 1) { out.push(head.map(function (h, j) { return j ? "" : "No hay pedidos entre esas fechas."; })); negrita.push(negrita[0].map(function () { return "normal"; })); fondo.push(fondo[1] || head.map(function () { return "#FFFFFF"; })); }
+  const ultimaFila = Math.max(sh.getLastRow(), RESPED_FILA);
+  sh.getRange(RESPED_FILA, 1, ultimaFila - RESPED_FILA + 1, Math.max(sh.getMaxColumns(), 1)).clear();
+  lugar_(sh, RESPED_FILA + out.length - 1, head.length);
+  const rango = sh.getRange(RESPED_FILA, 1, out.length, head.length);
+  rango.setValues(out);
+  rango.setFontWeights(negrita);
+  rango.setBackgrounds(fondo);
+  sh.getRange(RESPED_FILA + 1, head.length - 1, out.length, 2).setNumberFormat("$ #,##0");
+  sh.setFrozenRows(RESPED_FILA);
 }
 
 function filaPedidoCentral_(p, bar) {
@@ -1658,6 +1739,10 @@ function doPost(e) {
       // Nunca hay una accion que borre la planilla entera y la reemplace
       // con lo de un celular.
       return jsonOut_({ ok: false, error: "accion desconocida" });
+    }
+    // La hoja "Resumen de pedidos" queda al dia con cada pedido.
+    if (/^pedido_/.test(action)) {
+      try { resumirPedidos_(); } catch (err) {}
     }
     return jsonOut_({ ok: true });
   } catch (err) {

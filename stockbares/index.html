@@ -230,6 +230,8 @@
   .toast.show { opacity: 1; }
   .noaccess { padding: 40px 24px; text-align: center; color: var(--ink-soft); line-height: 1.5; }
   .choice.prov { padding: 15px 16px; font-size: 17px; }
+  .q-name .pv { display: block; font-size: 12px; color: var(--ink-soft); margin-top: 2px; }
+  .q-name .pv select { font-size: 13px; font-family: inherit; color: var(--wine-dark); border: 1px solid var(--line); border-radius: 6px; background: var(--surface); padding: 2px 4px; max-width: 100%; }
   .choice .pd-badge { font-size: 13px; font-weight: 700; color: var(--wine-dark); background: var(--wine-bg); padding: 5px 10px; border-radius: 20px; white-space: nowrap; }
   .pd-total { background: var(--gold-bg); border-radius: 10px; padding: 10px 12px; font-size: 14px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
   .pd-total strong { font-size: 18px; white-space: nowrap; }
@@ -493,9 +495,9 @@
       </div>
 
       <div id="pdStep2" style="display:none">
-        <div class="help-text">Elegí un proveedor y anotá cuánto pedirle. Podés sumar varios proveedores en el mismo pedido.</div>
-        <input type="search" id="pdBuscarProv" placeholder="Buscar proveedor…" style="display:none; width:100%; padding:12px 13px; border-radius:10px; border:1px solid var(--line); font-size:16px; background:var(--bg); margin-bottom:10px; font-family:inherit;">
-        <div class="choices" id="pdProvs"></div>
+        <input type="search" id="pdBuscarProd" placeholder="Buscar producto…" autocomplete="off" style="width:100%; padding:12px 13px; border-radius:10px; border:1px solid var(--line); font-size:16px; background:var(--bg); margin-bottom:10px; font-family:inherit;">
+        <div class="qlist" id="pdBuscados" style="display:none"></div>
+        <div class="choices" id="pdFams"></div>
         <div class="pd-foot">
           <div class="pd-total" id="pdTotal2"></div>
           <div class="modal-actions">
@@ -511,7 +513,7 @@
         <div class="pd-foot">
           <div class="pd-total" id="pdTotal3"></div>
           <div class="modal-actions">
-            <button class="btn-cancel" data-pdback="2">‹ Proveedores</button>
+            <button class="btn-cancel" data-pdback="2">‹ Familias</button>
             <button class="btn-save" data-pdrevisar>Revisar y enviar</button>
           </div>
         </div>
@@ -563,7 +565,7 @@
 const APP_NAME = "Stock";
 // Versión publicada. Tiene que ser igual a la de stockbares/version.json:
 // si el archivo dice otra, la app se recarga sola con la versión nueva.
-const APP_VERSION = "2026-10-18.1";
+const APP_VERSION = "2026-10-28.1";
 // Quiénes usan la app y qué puede hacer cada uno.
 //   cargar: carga y corrige el stock de un día mientras está abierto.
 //   cerrar: cierra el stock de un día (después nadie lo puede cambiar).
@@ -1528,7 +1530,8 @@ function renderEverything() {
   renderSyncState();
   if (!hasBar) return;
   dibujarPestana(pestanaActiva());
-  if (document.getElementById("pedOverlay").classList.contains("open") && (pdStep === 1 || pdStep === 2)) renderPedWizard();
+  // (Con el buscador escrito no se redibuja: se estaría anotando ahí.)
+  if (document.getElementById("pedOverlay").classList.contains("open") && (pdStep === 1 || pdStep === 2 && !document.getElementById("pdBuscarProd").value.trim())) renderPedWizard();
   // Si está abierta la carga, actualiza los ✓ (sin tocar lo que se está escribiendo).
   if (document.getElementById("cargaOverlay").classList.contains("open") && wStep !== 4) renderWizard();
 }
@@ -1881,7 +1884,9 @@ document.getElementById("pDelete").addEventListener("click", () => {
 // con un solo mensaje para que el dueño lo apruebe.
 const SIN_PROV = "Sin proveedor";
 const SEP = "\u0001";
-let pdStep = 1, pdCat = "", pdProv = "";
+let pdStep = 1, pdCat = "", pdFam = "";
+// Las bebidas compradas que no están en el catálogo van en esta familia, al final.
+const OTROS_COMPRAS = "Otros (de las compras)";
 
 function borradorKey() { return KEY_PREFIX + "bar_" + slug(curBarName) + "_pedido_borrador"; }
 function borradores() { const b = lsJson(borradorKey(), {}); return b && typeof b === "object" ? b : {}; }
@@ -1962,12 +1967,13 @@ function totalHtml(lineas) {
 }
 
 function openPedido() {
-  pdCat = ""; pdProv = "";
+  pdCat = ""; pdFam = "";
   document.getElementById("pdFecha").value = todayStr();
   document.getElementById("pedOverlay").classList.add("open");
   goPd(1);
 }
 function goPd(n) {
+  if (n === 2 && pdStep !== 2) document.getElementById("pdBuscarProd").value = "";
   pdStep = n;
   renderPedWizard();
   document.querySelector("#pedOverlay .modal-sheet").scrollTop = 0;
@@ -1978,10 +1984,10 @@ function renderPedWizard() {
   const b = pdCat ? borrador(pdCat) : null;
   const crumb = [];
   if (pdStep > 1) crumb.push("Pedido " + curBarName + " · " + pdCat + " · " + dayLabelLong(b.fecha));
-  if (pdStep === 3) crumb.push(pdProv);
+  if (pdStep === 3) crumb.push(pdFam);
   document.getElementById("pdCrumb").textContent = crumb.join(" · ");
   const editando = b && b.editando;
-  document.getElementById("pdTitle").textContent = pdStep === 1 ? "Hacer pedido" : pdStep === 2 ? (editando ? "Modificar pedido" : "¿A qué proveedor?") : pdStep === 3 ? pdProv : "Revisar y enviar";
+  document.getElementById("pdTitle").textContent = pdStep === 1 ? "Hacer pedido" : pdStep === 2 ? (editando ? "Modificar pedido" : "¿Qué familia?") : pdStep === 3 ? pdFam : "Revisar y enviar";
   document.getElementById("pdEnviar").textContent = editando ? "Guardar cambios" : "Enviar pedido";
 
   if (pdStep === 1) {
@@ -1990,7 +1996,7 @@ function renderPedWizard() {
       const n = Object.keys(borrador(cat).items).length;
       const l = productosPedido(cat).length;
       return '<button class="choice ' + catCls(cat) + '" data-pdcat="' + esc(cat) + '"' + (l ? "" : " disabled") + '><span>' + esc(cat) +
-        '<small>' + (l ? proveedoresDe(cat).length + (proveedoresDe(cat).length === 1 ? " proveedor" : " proveedores") : "No hay productos") + '</small></span>' +
+        '<small>' + (l ? l + (l === 1 ? " producto" : " productos") : "No hay productos") + '</small></span>' +
         (n ? '<span class="pd-badge">' + (n === 1 ? "1 sin enviar" : n + " sin enviar") + '</span>' : "") + '</button>';
     }).join("");
     c.querySelectorAll("[data-pdcat]").forEach(x => x.addEventListener("click", () => {
@@ -2004,57 +2010,104 @@ function renderPedWizard() {
     }));
   }
   if (pdStep === 2) {
-    const lineas = lineasBorrador(pdCat);
-    const provs = proveedoresDe(pdCat);
-    const c = document.getElementById("pdProvs");
-    c.innerHTML = provs.map(v => {
-      const l = productosDeProv(pdCat, v).length;
-      const mias = lineas.filter(x => x.proveedor === v);
-      const t = totalDe(mias);
-      return '<button class="choice prov ' + catCls(pdCat) + '" data-pdprov="' + esc(v) + '" data-name="' + esc(norm(v)) + '"><span>' + esc(v) +
-        '<small>' + l + (l === 1 ? " producto" : " productos") + '</small></span>' +
-        (mias.length ? '<span class="pd-badge">' + mias.length + ' · ' + fmtPesos(t.total) + '</span>' : "") + '</button>';
+    const b = borrador(pdCat);
+    const c = document.getElementById("pdFams");
+    c.innerHTML = familiasPedido(pdCat).map(f => {
+      const l = productosDeFam(pdCat, f);
+      const n = l.filter(p => cantEnBorrador(b, p.nombre) > 0).length;
+      return '<button class="choice prov ' + catCls(pdCat) + '" data-pdfam="' + esc(f) + '"><span>' + esc(f) +
+        '<small>' + l.length + (l.length === 1 ? " producto" : " productos") + '</small></span>' +
+        (n ? '<span class="pd-badge">' + n + (n === 1 ? " anotado" : " anotados") + '</span>' : "") + '</button>';
     }).join("");
-    c.querySelectorAll("[data-pdprov]").forEach(x => x.addEventListener("click", () => { pdProv = x.getAttribute("data-pdprov"); openPdLista(); }));
-    const bp = document.getElementById("pdBuscarProv");
-    bp.style.display = provs.length > 8 ? "block" : "none";
-    filtrarProvs();
-    document.getElementById("pdTotal2").innerHTML = totalHtml(lineas);
+    c.querySelectorAll("[data-pdfam]").forEach(x => x.addEventListener("click", () => { pdFam = x.getAttribute("data-pdfam"); openPdLista(); }));
+    buscarProducto();
+    document.getElementById("pdTotal2").innerHTML = totalHtml(lineasBorrador(pdCat));
   }
   if (pdStep === 4) renderPdResumen();
 }
 
-function filtrarProvs() {
-  const q = norm(document.getElementById("pdBuscarProv").value.trim());
-  document.querySelectorAll("#pdProvs [data-pdprov]").forEach(r => { r.style.display = !q || r.getAttribute("data-name").includes(q) ? "flex" : "none"; });
+// Familias de los pedidos: las del catálogo, en su orden, y al final las
+// bebidas compradas que no están en el catálogo.
+function famPedido(p) { return p.deCompras ? OTROS_COMPRAS : famOf(p); }
+function familiasPedido(cat) {
+  const l = familiasDe(cat);
+  if (productosPedido(cat).some(p => p.deCompras)) l.push(OTROS_COMPRAS);
+  return l;
 }
-document.getElementById("pdBuscarProv").addEventListener("input", filtrarProvs);
+// Los productos de una familia, por orden alfabético.
+function productosDeFam(cat, fam) {
+  return productosPedido(cat).filter(p => famPedido(p) === fam).sort((a, b) => a.nombre.localeCompare(b.nombre, "es"));
+}
+// A qué proveedor va cada producto: el que ya se eligió en este pedido o,
+// si no, el de la última compra. Sin compras: "Sin proveedor".
+function provDe(b, nombre) {
+  const k = Object.keys(b.items).find(x => x.split(SEP)[1] === nombre);
+  return k ? k.split(SEP)[0] : proveedoresDeProd(nombre)[0];
+}
+function cantEnBorrador(b, nombre) { return b.items[provDe(b, nombre) + SEP + nombre] || 0; }
+
+// Buscador: al escribir, aparecen los productos de todas las familias.
+function buscarProducto() {
+  const q = norm(document.getElementById("pdBuscarProd").value.trim());
+  const res = document.getElementById("pdBuscados");
+  document.getElementById("pdFams").style.display = q ? "none" : "flex";
+  res.style.display = q ? "block" : "none";
+  if (!q) { res.innerHTML = ""; return; }
+  const l = productosPedido(pdCat).filter(p => norm(p.nombre).includes(q)).sort((a, b) => a.nombre.localeCompare(b.nombre, "es")).slice(0, 40);
+  res.innerHTML = l.length ? l.map(pdRowHtml).join("") : '<div class="help-text" style="margin:8px 0;">No hay productos con ese nombre.</div>';
+  bindPdRows(res, "pdTotal2");
+}
+document.getElementById("pdBuscarProd").addEventListener("input", buscarProducto);
 
 function pdRowHtml(p) {
-  const pr = precioDe(p.nombre, pdProv);
+  const b = borrador(pdCat);
+  const prov = provDe(b, p.nombre);
+  const provs = proveedoresDeProd(p.nombre);
+  const pr = precioDe(p.nombre, prov);
   const det = [unitLabel(p.unidad), p.contenido].filter(Boolean).map(esc);
-  det.push(pr === null ? '<span class="sp">sin precio</span>' : esc(fmtPesos(pr)) + " c/u");
-  return '<div class="q-row" data-name="' + esc(norm(p.nombre)) + '"><div class="q-name">' + esc(p.nombre) +
-    '<small>' + det.join(" · ") + '</small><span class="eq"></span></div>' +
+  det.push('<span class="pr">' + (pr === null ? '<span class="sp">sin precio</span>' : esc(fmtPesos(pr)) + " c/u") + '</span>');
+  // Si se le compra a varios, se puede elegir a cuál pedirle.
+  const pv = provs.length > 1
+    ? '<select data-pv>' + provs.map(v => '<option value="' + esc(v) + '"' + (v === prov ? " selected" : "") + '>' + esc(v) + '</option>').join("") + '</select>'
+    : esc(prov);
+  return '<div class="q-row" data-name="' + esc(norm(p.nombre)) + '" data-prov="' + esc(prov) + '"><div class="q-name">' + esc(p.nombre) +
+    '<small>' + det.join(" · ") + '</small><span class="pv">' + pv + '</span><span class="eq"></span></div>' +
     '<input type="text" inputmode="decimal" autocomplete="off" data-item="' + esc(p.nombre) + '" placeholder="Cant."></div>';
 }
 
-function openPdLista() {
-  const lista = productosDeProv(pdCat, pdProv);
+function bindPdRows(box, totalId) {
   const b = borrador(pdCat);
+  box.querySelectorAll(".q-row").forEach(row => {
+    const inp = row.querySelector("input");
+    const q = cantEnBorrador(b, inp.getAttribute("data-item"));
+    if (q > 0) inp.value = String(q).replace(".", ",");
+    inp.addEventListener("input", () => pdCambio(row, totalId));
+    const sel = row.querySelector("[data-pv]");
+    if (sel) sel.addEventListener("change", () => {
+      // Cambia el proveedor: lo anotado pasa al nuevo.
+      const bb = borrador(pdCat), nombre = inp.getAttribute("data-item");
+      const vieja = row.getAttribute("data-prov") + SEP + nombre;
+      const cant = bb.items[vieja];
+      delete bb.items[vieja];
+      row.setAttribute("data-prov", sel.value);
+      if (cant > 0) bb.items[sel.value + SEP + nombre] = cant;
+      guardarBorrador(pdCat, bb);
+      const pr = precioDe(nombre, sel.value);
+      row.querySelector(".pr").innerHTML = pr === null ? '<span class="sp">sin precio</span>' : esc(fmtPesos(pr)) + " c/u";
+      pdCambio(row, totalId);
+    });
+    pdMarcar(row);
+  });
+}
+
+function openPdLista() {
+  const lista = productosDeFam(pdCat, pdFam);
   const box = document.getElementById("pdLista");
   box.innerHTML = lista.map(pdRowHtml).join("");
   const buscar = document.getElementById("pdBuscar");
   buscar.value = "";
   buscar.style.display = lista.length > 12 ? "block" : "none";
-  box.querySelectorAll(".q-row").forEach(row => {
-    const inp = row.querySelector("input");
-    const nombre = inp.getAttribute("data-item");
-    const q = b.items[pdProv + SEP + nombre];
-    if (q > 0) inp.value = String(q).replace(".", ",");
-    inp.addEventListener("input", () => pdCambio(row));
-    pdMarcar(row);
-  });
+  bindPdRows(box, "pdTotal3");
   document.getElementById("pdTotal3").innerHTML = totalHtml(lineasBorrador(pdCat));
   goPd(3);
 }
@@ -2063,23 +2116,23 @@ function openPdLista() {
 function pdMarcar(row) {
   const inp = row.querySelector("input");
   const q = parseQty(inp.value);
-  const pr = precioDe(inp.getAttribute("data-item"), pdProv);
+  const pr = precioDe(inp.getAttribute("data-item"), row.getAttribute("data-prov"));
   const ok = q !== null && !isNaN(q) && q > 0;
   row.classList.toggle("filled", ok);
   row.querySelector(".eq").textContent = ok && pr !== null ? "= " + fmtPesos(q * pr) : "";
 }
 
 // Cada número que se escribe queda en el borrador (no se pierde si se cierra la app).
-function pdCambio(row) {
+function pdCambio(row, totalId) {
   const inp = row.querySelector("input");
   const nombre = inp.getAttribute("data-item");
   const q = parseQty(inp.value);
   const b = borrador(pdCat);
-  const k = pdProv + SEP + nombre;
+  const k = row.getAttribute("data-prov") + SEP + nombre;
   if (q !== null && !isNaN(q) && q > 0) b.items[k] = q; else delete b.items[k];
   guardarBorrador(pdCat, b);
   pdMarcar(row);
-  document.getElementById("pdTotal3").innerHTML = totalHtml(lineasBorrador(pdCat));
+  document.getElementById(totalId || "pdTotal3").innerHTML = totalHtml(lineasBorrador(pdCat));
 }
 
 document.getElementById("pdBuscar").addEventListener("input", (e) => {
@@ -2281,7 +2334,7 @@ function modificarPedido(items) {
   const b = { fecha: it.fecha, items: {}, editando: pid, nota: it.nota || "" };
   items.forEach(x => { b.items[(x.proveedor || SIN_PROV) + SEP + x.producto] = Number(x.cantidad); });
   guardarBorrador(cat, b);
-  pdCat = cat; pdProv = "";
+  pdCat = cat; pdFam = "";
   document.getElementById("pdFecha").value = it.fecha;
   document.getElementById("pdNota").value = it.nota || "";
   document.getElementById("pedOverlay").classList.add("open");
