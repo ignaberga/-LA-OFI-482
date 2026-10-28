@@ -217,7 +217,8 @@ quiere armar.
   "Sin proveedor". A la hoja Pedidos llega **igual que antes** (un renglón
   por producto con su proveedor; Noel pidió que no cambie).
   **Hoja "Resumen de pedidos"** de la central (`resumirPedidos_`): Desde
-  en B1 y Hasta en B2 (las cambia Noel y se rearma sola, `onEdit`); por
+  en B1 y Hasta en B2, con calendario (doble clic; `calendarioResumen_`)
+  (las cambia Noel y se rearma sola, `onEdit`); por
   proveedor → producto, una columna por bar, Total, Precio, Plata
   estimada y un renglón "Total <proveedor>" ("Sin proveedor" al final).
   No cuenta los Cancelados. Se rearma también con cada pedido_*.

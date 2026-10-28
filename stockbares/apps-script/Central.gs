@@ -1180,7 +1180,11 @@ const RESPED_FILA = 5;
 function hojaResumenPedidos_() {
   const c = central_();
   let sh = c.getSheetByName(SHEET_RESUMEN_PED);
-  if (sh) return sh;
+  if (sh) {
+    // Hojas creadas antes de tener el calendario: se lo agrega una vez
+    if (!sh.getRange(1, 2).getDataValidation()) calendarioResumen_(sh);
+    return sh;
+  }
   sh = c.insertSheet(SHEET_RESUMEN_PED);
   const hoy = new Date();
   const desde = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate() - 7);
@@ -1189,7 +1193,14 @@ function hojaResumenPedidos_() {
   sh.getRange(1, 1, 2, 1).setFontWeight("bold");
   sh.getRange(1, 2, 2, 1).setNumberFormat("dd/mm/yyyy").setBackground("#FFF2CC");
   sh.getRange(3, 1).setFontColor("#6E6166");
+  calendarioResumen_(sh);
   return sh;
+}
+// Desde y Hasta solo aceptan fechas: con doble clic en la celda se abre el calendario
+function calendarioResumen_(sh) {
+  sh.getRange(1, 2, 2, 1).setDataValidation(SpreadsheetApp.newDataValidation().requireDate()
+    .setAllowInvalid(false).setHelpText("Doble clic para elegir la fecha en el calendario").build());
+  sh.getRange(3, 1).setValue("Doble clic en la fecha para abrir el calendario. Se arma solo. No cuenta los pedidos Cancelados.");
 }
 function resumirPedidos_() {
   const sh = hojaResumenPedidos_();
