@@ -109,7 +109,8 @@ const SHEET_CONFIG = "Config";
 const SHEET_CIERRES = "Cierres";
 const SHEET_PEDIDOS = "Pedidos";
 
-const CONTEO_HEADERS = ["ID","Fecha","Categoría","Grupo","Producto","Cantidad","Unidad","Persona","Nota","Cargado","Carga"];
+const CONTEO_HEADERS = ["ID","Fecha","Categoría","Grupo","Producto","Código","Cantidad","Unidad","Persona","Nota","Cargado","Carga"];
+const COL_CARGA = 11; // Carga, contando desde 0 (antes del Código era la 10)
 const CATALOGO_HEADERS = ["Producto","Categoría","Grupo","Unidad","Familia","Contenido"];
 const CONFIG_HEADERS = ["Tipo","Valor"];
 const CIERRES_HEADERS = ["Fecha","Cerrado por","Cuándo"];
@@ -643,7 +644,7 @@ function calcularPreciosBar_(barNombre, catalogo) {
     const prod = m && /^lit/.test(norm_(l[0].medida)) ? { unidad: "Botellas", contenido: m[1].replace(",", ".") + " " + m[2].toLowerCase().replace(/^lts?$/, "l") } : null;
     const porProveedor = {}, provs = [];
     l.forEach(function (h) { if (provs.indexOf(h.proveedor) < 0) { provs.push(h.proveedor); porProveedor[h.proveedor] = prod ? precioPorUnidad_(h, prod) : h.precio; } });
-    return { nombre: l[0].nombre, unidad: prod ? prod.unidad : unidadDeMedida_(l[0].medida), contenido: prod ? prod.contenido : "",
+    return { nombre: l[0].nombre, codigo: l[0].codigo || "", unidad: prod ? prod.unidad : unidadDeMedida_(l[0].medida), contenido: prod ? prod.contenido : "",
       costo: porProveedor[provs[0]], proveedores: provs, porProveedor: porProveedor };
   }).sort(function (a, b) { return a.nombre.localeCompare(b.nombre); });
   return { precios: out, extras: extras };
@@ -656,7 +657,7 @@ function preciosDelCatalogo_(barNombre, catalogo) { return calcularPreciosBar_(b
 function preciosDelBar_(bar, catalogo, conNuevos) {
   const huella = Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5,
     JSON.stringify(catalogo.map(function (p) { return [p.nombre, p.codigo, p.unidad, p.contenido, p.familia]; })), Utilities.Charset.UTF_8));
-  const k = "pr|" + versionPrecios_() + "|" + huella + "|" + norm_(bar.nombre).slice(0, 60);
+  const k = "pr2|" + versionPrecios_() + "|" + huella + "|" + norm_(bar.nombre).slice(0, 60);
   let v = cacheGet_(k);
   if (!v || !v.precios || !Array.isArray(v.extras) || (conNuevos && !Array.isArray(v.nuevos))) {
     const c = calcularPreciosBar_(bar.nombre, catalogo);
@@ -714,7 +715,9 @@ function onOpen() {
   hojaCentral_(SHEET_PERSONAS, PERSONAS_HEADERS);
   hojaCentral_(SHEET_EQUIV, EQUIV_HEADERS);
   hojaProvBebida_();
-  hojaPedidosCentral_();
+  // Al abrir solo se crea si falta: acomodarla (abre las planillas de los
+  // bares) lo hace la primera carga de un pedido.
+  if (!central_().getSheetByName(SHEET_PEDIDOS)) hojaPedidosCentral_();
   if (!central_().getSheetByName(SHEET_RESUMEN_PED)) resumirPedidos_();
   SpreadsheetApp.getUi().createMenu("Stock bares")
     .addItem("Armar links de instalación", "armarLinks")
@@ -1080,23 +1083,35 @@ function num_(v) {
   return isNaN(n) ? 0 : n;
 }
 
-function readConteos_() { return conteosDeFilas_(readRows_(SHEET_CONTEOS)); }
-function conteosDeFilas_(filas) {
+// Lee Conteos con o sin la columna Codigo (una hoja que todavia no se
+// acomodo se lee igual).
+function readConteos_() {
+  const sh = ss_().getSheetByName(SHEET_CONTEOS);
+  if (!sh) return [];
+  const data = sh.getDataRange().getValues();
+  return conteosDeFilas_(data.slice(1), norm_(data[0][5]) === "codigo");
+}
+function conteosDeFilas_(filas, conCodigo) {
+  const o = conCodigo ? 1 : 0;
   return filas.filter(function (r) { return r[0] !== ""; }).map(function (r) {
     return {
       id: String(r[0]), fecha: formatDate_(r[1]), categoria: cat_(r[2]), grupo: String(r[3] || ""),
-      producto: String(r[4]), cantidad: num_(r[5]), unidad: String(r[6] || ""), persona: String(r[7] || ""),
-      nota: String(r[8] || ""), cargado: formatDateTime_(r[9]), carga: String(r[10] || r[0])
+      producto: String(r[4]), codigo: o ? String(r[5] || "") : "", cantidad: num_(r[5 + o]), unidad: String(r[6 + o] || ""),
+      persona: String(r[7 + o] || ""), nota: String(r[8 + o] || ""), cargado: formatDateTime_(r[9 + o]), carga: String(r[10 + o] || r[0])
     };
   });
 }
 
+// En una misma carga el Catalogo se lee una sola vez.
+let CATALOGO_ = null;
 function readCatalogo_() {
+  if (CATALOGO_ && CATALOGO_.ss === ss_()) return CATALOGO_.v;
   const sh = ss_().getSheetByName(SHEET_CATALOGO);
   if (!sh) return [];
   const data = sh.getDataRange().getValues();
   completarTitulosCatalogo_(sh, data[0] || []);
-  return data.slice(1).filter(function (r) { return String(r[0]).trim() !== ""; }).map(function (r) {
+  CATALOGO_ = { ss: ss_(), v: null };
+  return CATALOGO_.v = data.slice(1).filter(function (r) { return String(r[0]).trim() !== ""; }).map(function (r) {
     const txt = function (v) { return String(v === undefined || v === null ? "" : v).trim(); };
     return {
       nombre: txt(r[0]),
@@ -1144,15 +1159,73 @@ function fechasCerradas_(cierres) {
 // por producto, con una columna Estado (En espera / Recibido / Cancelado)
 // que pinta el renglon de amarillo, verde o rojo. Tiene filtro puesto.
 // ------------------------------------------------------------
-const PEDIDOS_CENTRAL_HEADERS = ["Fecha", "Bar", "Pedido", "Categoría", "Proveedor", "Producto", "Cantidad", "Unidad",
-  "Precio", "Subtotal", "Persona", "Nota", "Cargado", "Estado", "ID"];
+// Desde noviembre 2026 lleva el Codigo (de Cuccina) al lado del Producto.
+const PEDIDOS_CENTRAL_HEADERS = ["Fecha", "Bar", "Pedido", "Categoría", "Proveedor", "Producto", "Código", "Cantidad",
+  "Unidad", "Precio", "Subtotal", "Persona", "Nota", "Cargado", "Estado", "ID"];
 const ESTADOS = ["En espera", "Recibido", "Cancelado"];
-const COL_ESTADO = 14, COL_ID = 15;
+const COL_ESTADO = 15, COL_ID = 16, COL_PERSONA = 12;
+
+// Columnas de la hoja Pedidos (contando desde 0), con o sin el Codigo: asi
+// una hoja que todavia no se acomodo se lee bien.
+function colsPedidos_(titulos) {
+  const o = norm_(titulos && titulos[6]) === "codigo" ? 1 : 0;
+  return { codigo: o ? 6 : -1, cant: 6 + o, unidad: 7 + o, precio: 8 + o, subtotal: 9 + o, persona: 10 + o, nota: 11 + o,
+    cargado: 12 + o, estado: 13 + o, id: 14 + o };
+}
+
+function reglasPedidos_(sh) {
+  const todo = sh.getRange(2, 1, sh.getMaxRows() - 1, PEDIDOS_CENTRAL_HEADERS.length);
+  const regla = function (estado, color) {
+    return SpreadsheetApp.newConditionalFormatRule().whenFormulaSatisfied('=$O2="' + estado + '"')
+      .setBackground(color).setRanges([todo]).build();
+  };
+  sh.setConditionalFormatRules([regla("Recibido", "#D9EAD3"), regla("Cancelado", "#F4CCCC"), regla("En espera", "#FFF2CC")]);
+}
+
+// La hoja de antes (sin Codigo) se acomoda una sola vez: se mete la
+// columna al lado de Producto (lo de la derecha se corre, con su lista de
+// Estado y su filtro) y se completa con el Codigo del Catalogo de cada bar.
+// Con candado, para que dos cargas a la vez no metan dos columnas.
+function acomodarPedidos_(sh) {
+  if (norm_(sh.getRange(1, 7).getValue()) === "codigo") return;
+  const lock = LockService.getScriptLock();
+  const tenia = lock.hasLock();
+  if (!tenia && !lock.tryLock(20000)) return;
+  try {
+    if (norm_(sh.getRange(1, 7).getValue()) === "codigo") return;
+    sh.insertColumnAfter(6);
+    sh.getRange(1, 7).setValue("Código").setFontWeight("bold");
+    reglasPedidos_(sh);
+    const n = sh.getLastRow() - 1;
+    if (n > 0) {
+      const datos = sh.getRange(2, 1, n, 6).getValues();
+      const porBar = {};
+      leerBares_().forEach(function (b) {
+        try {
+          const cat = SpreadsheetApp.openById(b.id).getSheetByName(SHEET_CATALOGO);
+          const m = porBar[norm_(b.nombre)] = {};
+          if (cat) cat.getDataRange().getValues().slice(1).forEach(function (r) {
+            const cod = String(r[6] === undefined || r[6] === null ? "" : r[6]).trim();
+            if (cod) m[norm_(r[0])] = cod;
+          });
+        } catch (err) {}
+      });
+      const buscar = function (bar, prod) {
+        const nb = norm_(bar);
+        const k = Object.keys(porBar).filter(function (x) { return x === nb || mismoBar_(x, nb); })[0];
+        return (k && porBar[k][norm_(prod)]) || "";
+      };
+      sh.getRange(2, 7, n, 1).setValues(datos.map(function (r) { return [buscar(r[1], r[5])]; }));
+    }
+  } finally {
+    if (!tenia) lock.releaseLock();
+  }
+}
 
 function hojaPedidosCentral_() {
   const c = central_();
   let sh = c.getSheetByName(SHEET_PEDIDOS);
-  if (sh) return sh;
+  if (sh) { acomodarPedidos_(sh); return sh; }
   sh = c.insertSheet(SHEET_PEDIDOS);
   const n = PEDIDOS_CENTRAL_HEADERS.length;
   sh.getRange(1, 1, 1, n).setValues([PEDIDOS_CENTRAL_HEADERS]).setFontWeight("bold");
@@ -1161,12 +1234,7 @@ function hojaPedidosCentral_() {
   const filas = sh.getMaxRows() - 1;
   sh.getRange(2, COL_ESTADO, filas, 1).setDataValidation(
     SpreadsheetApp.newDataValidation().requireValueInList(ESTADOS, true).setAllowInvalid(false).build());
-  const todo = sh.getRange(2, 1, filas, n);
-  const regla = function (estado, color) {
-    return SpreadsheetApp.newConditionalFormatRule().whenFormulaSatisfied('=$N2="' + estado + '"')
-      .setBackground(color).setRanges([todo]).build();
-  };
-  sh.setConditionalFormatRules([regla("Recibido", "#D9EAD3"), regla("Cancelado", "#F4CCCC"), regla("En espera", "#FFF2CC")]);
+  reglasPedidos_(sh);
   sh.getRange(1, 1, sh.getMaxRows(), n).createFilter();
   return sh;
 }
@@ -1207,21 +1275,23 @@ function resumirPedidos_() {
   const ped = central_().getSheetByName(SHEET_PEDIDOS);
   const fechas = sh.getRange(1, 2, 2, 1).getValues();
   const desde = fechaMs_(fechas[0][0]), hasta = fechaMs_(fechas[1][0]);
-  const filas = ped ? ped.getDataRange().getValues().slice(1) : [];
+  const todas = ped ? ped.getDataRange().getValues() : [[]];
+  const C = colsPedidos_(todas[0]);
+  const filas = todas.slice(1);
   const bares = leerBares_().map(function (b) { return b.nombre; });
   const usados = {}, grupos = {};
   filas.forEach(function (r) {
-    if (!String(r[5] || "").trim() || String(r[COL_ESTADO - 1]) === "Cancelado") return;
+    if (!String(r[5] || "").trim() || String(r[C.estado]) === "Cancelado") return;
     const f = fechaMs_(r[0]);
     if (!f || (desde && f < desde) || (hasta && f > hasta)) return;
     const prov = String(r[4] || "").trim() || "Sin proveedor", prod = String(r[5]).trim(), bar = String(r[1]).trim();
     usados[bar] = true;
     const k = prov + "\u0001" + prod;
-    const g = grupos[k] = grupos[k] || { prov: prov, prod: prod, unidad: String(r[7] || ""), bares: {}, cant: 0, plata: 0, conPrecio: 0 };
-    const q = num_(r[6]);
+    const g = grupos[k] = grupos[k] || { prov: prov, prod: prod, unidad: String(r[C.unidad] || ""), bares: {}, cant: 0, plata: 0, conPrecio: 0 };
+    const q = num_(r[C.cant]);
     g.bares[bar] = (g.bares[bar] || 0) + q;
     g.cant += q;
-    if (r[9] !== "" && r[9] !== null) { g.plata += num_(r[9]); g.conPrecio += q; }
+    if (r[C.subtotal] !== "" && r[C.subtotal] !== null) { g.plata += num_(r[C.subtotal]); g.conPrecio += q; }
   });
   const cols = bares.filter(function (b) { return usados[b]; })
     .concat(Object.keys(usados).filter(function (b) { return bares.indexOf(b) < 0; }));
@@ -1262,7 +1332,7 @@ function resumirPedidos_() {
 }
 
 function filaPedidoCentral_(p, bar) {
-  return [p.fecha, bar, p.pedido || p.id, p.categoria || "", p.proveedor || "", p.producto, p.cantidad,
+  return [p.fecha, bar, p.pedido || p.id, p.categoria || "", p.proveedor || "", p.producto, p.codigo || "", p.cantidad,
     p.unidad || "", p.precio === null || p.precio === undefined ? "" : p.precio,
     p.subtotal === null || p.subtotal === undefined ? "" : p.subtotal, p.persona || "", p.nota || "", p.cargado || "",
     "En espera", p.id];
@@ -1275,16 +1345,19 @@ function readPedidosDelBar_(barNombre) {
   const sh = central_().getSheetByName(SHEET_PEDIDOS);
   if (sh) {
     const nb = norm_(barNombre);
-    sh.getDataRange().getValues().slice(1)
-      .filter(function (r) { return r.length >= COL_ID && String(r[COL_ID - 1]) !== "" && norm_(r[1]) === nb; })
+    const todas = sh.getDataRange().getValues();
+    const C = colsPedidos_(todas[0]);
+    todas.slice(1)
+      .filter(function (r) { return r.length > C.id && String(r[C.id]) !== "" && norm_(r[1]) === nb; })
       .slice(-PEDIDOS_A_LA_APP).forEach(function (r) {
-        vistos[String(r[COL_ID - 1])] = true;
+        vistos[String(r[C.id])] = true;
         out.push({
-          id: String(r[COL_ID - 1]), fecha: formatDate_(r[0]), pedido: String(r[2] || r[COL_ID - 1]), categoria: cat_(r[3]),
-          proveedor: String(r[4] || ""), producto: String(r[5]), cantidad: num_(r[6]), unidad: String(r[7] || ""),
-          precio: r[8] === "" ? null : num_(r[8]), subtotal: r[9] === "" ? null : num_(r[9]),
-          persona: String(r[10] || ""), nota: String(r[11] || ""), cargado: formatDateTime_(r[12]),
-          estado: String(r[COL_ESTADO - 1] || "En espera")
+          id: String(r[C.id]), fecha: formatDate_(r[0]), pedido: String(r[2] || r[C.id]), categoria: cat_(r[3]),
+          proveedor: String(r[4] || ""), producto: String(r[5]), codigo: C.codigo >= 0 ? String(r[C.codigo] || "") : "",
+          cantidad: num_(r[C.cant]), unidad: String(r[C.unidad] || ""),
+          precio: r[C.precio] === "" ? null : num_(r[C.precio]), subtotal: r[C.subtotal] === "" ? null : num_(r[C.subtotal]),
+          persona: String(r[C.persona] || ""), nota: String(r[C.nota] || ""), cargado: formatDateTime_(r[C.cargado]),
+          estado: String(r[C.estado] || "En espera")
         });
       });
   }
@@ -1363,9 +1436,34 @@ function deleteRowsIf_(sh, pasa) {
   }
 }
 
-function conteoToRow_(c) {
-  return [c.id, c.fecha, c.categoria || "", c.grupo || "", c.producto, c.cantidad,
-    c.unidad || "", c.persona || "", c.nota || "", c.cargado || "", c.carga || c.id];
+function conteoToRow_(c, codigos) {
+  return [c.id, c.fecha, c.categoria || "", c.grupo || "", c.producto, (codigos && codigos[norm_(c.producto)]) || "",
+    c.cantidad, c.unidad || "", c.persona || "", c.nota || "", c.cargado || "", c.carga || c.id];
+}
+
+// Codigo de Cuccina de cada producto del catalogo del bar (por nombre).
+function codigosDelCatalogo_() {
+  const m = {};
+  readCatalogo_().forEach(function (p) { if (p.codigo) m[norm_(p.nombre)] = p.codigo; });
+  return m;
+}
+
+// Desde noviembre 2026 Conteos lleva el Codigo al lado del Producto (para
+// que Noel lo pueda importar en Cuccina). Las hojas de antes se acomodan
+// solas la primera vez que se carga algo: se mete la columna (lo de la
+// derecha se corre, sin perder nada) y se completa con el Catalogo.
+function hojaConteos_() {
+  const sh = getSheet_(SHEET_CONTEOS, CONTEO_HEADERS);
+  if (norm_(sh.getRange(1, 6).getValue()) !== "codigo") {
+    sh.insertColumnAfter(5);
+    sh.getRange(1, 6).setValue("Código").setFontWeight("bold");
+    const n = sh.getLastRow() - 1;
+    if (n > 0) {
+      const cod = codigosDelCatalogo_();
+      sh.getRange(2, 6, n, 1).setValues(sh.getRange(2, 5, n, 1).getValues().map(function (r) { return [cod[norm_(r[0])] || ""]; }));
+    }
+  }
+  return sh;
 }
 
 // Arma la hoja Resumen del bar (igual que antes). Si ya se leyeron los
@@ -1501,7 +1599,7 @@ function abrirBar_(yo, barNombre) {
 }
 
 // Lo leido en un pedido anterior no sirve para este.
-function olvidar_() { PB_ = null; PRECIOS_ = null; EQUIV_ = null; PROV_BEBIDA_ = null; SS = null; CACHE_LEIDO_ = {}; }
+function olvidar_() { CATALOGO_ = null; PB_ = null; PRECIOS_ = null; EQUIV_ = null; PROV_BEBIDA_ = null; SS = null; CACHE_LEIDO_ = {}; }
 
 function doGet(e) {
   olvidar_();
@@ -1603,17 +1701,18 @@ function doPost(e) {
       if ((body.conteos || []).some(function (c) { return c && cerradas[c.fecha]; })) {
         return jsonOut_({ ok: false, error: "el stock de ese dia esta cerrado", descartar: true });
       }
-      const sh = getSheet_(SHEET_CONTEOS, CONTEO_HEADERS);
+      const sh = hojaConteos_();
       const filas = sh.getDataRange().getValues();
       const existentes = {};
       filas.forEach(function (r) { existentes[String(r[0])] = true; });
+      const codigos = codigosDelCatalogo_();
       const nuevas = (body.conteos || [])
         .filter(function (c) { return c && c.id && !existentes[String(c.id)]; })
-        .map(function (c) { c.persona = persona; return conteoToRow_(c); });
+        .map(function (c) { c.persona = persona; return conteoToRow_(c, codigos); });
       if (nuevas.length) {
         lugar_(sh, filas.length + nuevas.length, 0);
         sh.getRange(filas.length + 1, 1, nuevas.length, CONTEO_HEADERS.length).setValues(nuevas);
-        rebuildResumen_(conteosDeFilas_(filas.slice(1).concat(nuevas)), cierres);
+        rebuildResumen_(conteosDeFilas_(filas.slice(1).concat(nuevas), true), cierres);
       }
 
     } else if (action === "pedido_add") {
@@ -1645,7 +1744,7 @@ function doPost(e) {
       if (suyas.some(function (r) { return String(r[COL_ESTADO - 1] || "En espera") !== "En espera"; })) {
         return jsonOut_({ ok: false, error: "el pedido ya fue recibido o cancelado", descartar: true });
       }
-      if (yo.rol !== ROL_ADMIN && suyas.some(function (r) { return String(r[10]) !== persona; })) {
+      if (yo.rol !== ROL_ADMIN && suyas.some(function (r) { return String(r[COL_PERSONA - 1]) !== persona; })) {
         return jsonOut_({ ok: false, error: "sin permiso", descartar: true });
       }
       // Se borran de abajo hacia arriba (los renglones de un pedido van juntos).
@@ -1657,7 +1756,7 @@ function doPost(e) {
       }
       if (action === "pedido_edit") {
         const nuevas = (body.items || []).filter(function (p) { return p && p.id; })
-          .map(function (p) { p.persona = suyas.length ? String(suyas[0][10]) : persona; p.pedido = pid; return filaPedidoCentral_(p, barAbierto.nombre); });
+          .map(function (p) { p.persona = suyas.length ? String(suyas[0][COL_PERSONA - 1]) : persona; p.pedido = pid; return filaPedidoCentral_(p, barAbierto.nombre); });
         if (nuevas.length) {
           const ultima = sh.getLastRow();
           lugar_(sh, ultima + nuevas.length, 0);
@@ -1677,7 +1776,7 @@ function doPost(e) {
       }
 
     } else if (action === "delete_carga") {
-      deleteRowsWhere_(getSheet_(SHEET_CONTEOS, CONTEO_HEADERS), 10, body.carga);
+      deleteRowsWhere_(hojaConteos_(), COL_CARGA, body.carga);
       rebuildResumen_();
 
     } else if (action === "cerrar") {
@@ -1692,16 +1791,17 @@ function doPost(e) {
       rebuildResumen_();
 
     } else if (action === "delete_dia") {
-      deleteRowsDeFecha_(getSheet_(SHEET_CONTEOS, CONTEO_HEADERS), 1, body.fecha);
+      deleteRowsDeFecha_(hojaConteos_(), 1, body.fecha);
       deleteRowsDeFecha_(getSheet_(SHEET_CIERRES, CIERRES_HEADERS), 0, body.fecha);
       rebuildResumen_();
 
     } else if (action === "replace_carga") {
-      const sh = getSheet_(SHEET_CONTEOS, CONTEO_HEADERS);
-      deleteRowsWhere_(sh, 10, body.carga);
+      const sh = hojaConteos_();
+      deleteRowsWhere_(sh, COL_CARGA, body.carga);
+      const codigos = codigosDelCatalogo_();
       const nuevas = (body.conteos || []).filter(function (c) { return c && c.id; }).map(function (c) {
         c.carga = body.carga;
-        return conteoToRow_(c);
+        return conteoToRow_(c, codigos);
       });
       if (nuevas.length) {
         const desde = sh.getLastRow() + 1;
@@ -1723,10 +1823,12 @@ function doPost(e) {
       }
       if (found > 0) sh.getRange(found, 1, 1, row.length).setValues([row]);
       else sh.appendRow(row);
+      CATALOGO_ = null;
       rebuildResumen_();
 
     } else if (action === "product_remove") {
       deleteRowsWhere_(getSheet_(SHEET_CATALOGO, CATALOGO_HEADERS), 0, body.nombre);
+      CATALOGO_ = null;
       rebuildResumen_();
 
     } else if (action === "config_add") {

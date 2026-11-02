@@ -222,6 +222,25 @@ quiere armar.
   proveedor → producto, una columna por bar, Total, Precio, Plata
   estimada y un renglón "Total <proveedor>" ("Sin proveedor" al final).
   No cuenta los Cancelados. Se rearma también con cada pedido_*.
+- **Código de Cuccina en Conteos y Pedidos (pedido de Noel, 11/2026):**
+  "el código es el conciliador, como un plan de cuentas"; Noel va a bajar
+  Conteos e importarlo en Cuccina (el formato de importación todavía no
+  lo tiene). La columna **Código** va **al lado de Producto** (no al
+  final, pedido de Ignacio): Conteos = ID | Fecha | Categoría | Grupo |
+  Producto | Código | Cantidad | Unidad | Persona | Nota | Cargado | Carga;
+  Pedidos = … | Proveedor | Producto | Código | Cantidad | … | Estado | ID.
+  Sale de la columna 7 del Catálogo del bar (Conteos lo pone la planilla;
+  en Pedidos lo manda la app, y en los "Otros (de las compras)" sale de la
+  compra). Las hojas viejas se acomodan solas en la primera carga
+  (`hojaConteos_`, `acomodarPedidos_`, con candado): se mete la columna y
+  se completa lo ya cargado con el Catálogo; mientras tanto se leen igual
+  (`conteosDeFilas_(…, conCodigo)`, `colsPedidos_`). En el Resumen del bar
+  no va. Producto sin código: se guarda igual con el código vacío; crear
+  un producto desde la app **no** pide código (el encargado no lo sabe;
+  los códigos se cargan en el Catálogo). El `Code.gs` viejo por bar
+  escribe Conteos sin Código: ningún celular puede seguir usándolo.
+- Compras repetidas: se dejan todas (decisión de Ignacio, 11/2026); solo
+  no se repiten renglones idénticos.
 - **Velocidad (17/10/2026, pedido de Ignacio):**
   - Planilla central: memoria rápida de Google (CacheService) para
     Personas y Bares (10 min) y los precios de cada bar (6 h, clave con la

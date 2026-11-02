@@ -565,7 +565,7 @@
 const APP_NAME = "Stock";
 // Versión publicada. Tiene que ser igual a la de stockbares/version.json:
 // si el archivo dice otra, la app se recarga sola con la versión nueva.
-const APP_VERSION = "2026-10-28.1";
+const APP_VERSION = "2026-11-02.1";
 // Quiénes usan la app y qué puede hacer cada uno.
 //   cargar: carga y corrige el stock de un día mientras está abierto.
 //   cerrar: cierra el stock de un día (después nadie lo puede cambiar).
@@ -1907,7 +1907,7 @@ function productosPedido(cat) {
   if (cat !== "Barra") return l;
   const ya = new Set(l.map(p => norm(p.nombre)));
   return l.concat(comprasPedido.filter(x => x && x.nombre && !ya.has(norm(x.nombre)))
-    .map(x => ({ nombre: x.nombre, categoria: "Barra", unidad: x.unidad || "", contenido: x.contenido || "", deCompras: true })));
+    .map(x => ({ nombre: x.nombre, categoria: "Barra", unidad: x.unidad || "", contenido: x.contenido || "", codigo: x.codigo || "", deCompras: true })));
 }
 function prodPedido(n) { return prodByName(n) || productosPedido("Barra").find(p => p.nombre === n); }
 function infoPrecio(nombre) { return precios[nombre] || comprasPedido.find(x => x && x.nombre === nombre) || null; }
@@ -1950,7 +1950,7 @@ function lineasBorrador(cat) {
       if (!(q > 0)) return;
       const p = prodPedido(n);
       const precio = precioDe(n, prov);
-      out.push({ proveedor: prov, producto: n, cantidad: q, unidad: p ? p.unidad : "", precio: precio, subtotal: precio === null ? null : Math.round(q * precio * 100) / 100 });
+      out.push({ proveedor: prov, producto: n, codigo: p && p.codigo ? String(p.codigo) : "", cantidad: q, unidad: p ? p.unidad : "", precio: precio, subtotal: precio === null ? null : Math.round(q * precio * 100) / 100 });
     });
   });
   return out;
