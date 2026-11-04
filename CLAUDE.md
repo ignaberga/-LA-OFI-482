@@ -16,6 +16,7 @@ que es solo un menú con links a cada app.
 | `stockbares/` | Stock de los bares de Noel (jefe de Ignacio). Ver abajo. |
 | `archivo/` | Versiones viejas guardadas por si se quieren recuperar. |
 | `molde/` | Molde de ingresos y gastos (copia de La Emilia sin nada del campo), base para apps nuevas. |
+| `impositiva/` | Planilla impositiva del estudio (Google Sheets + Apps Script, no es app web). Ver abajo. |
 
 Para una app nueva: copiar `molde/` a una carpeta nueva, cambiarle el
 `KEY_PREFIX` y adaptarla. Antes de cambiar nada, preguntarle a Ignacio qué
@@ -276,6 +277,67 @@ quiere armar.
 - La planilla de prueba es de la cuenta de Ignacio; la definitiva la tiene
   que crear Noel con su cuenta (el Apps Script funciona a nombre de quien lo
   implementa).
+
+## Planilla impositiva (`impositiva/`)
+
+- Pedido de Ignacio (noviembre 2026), para **todas las empresas del
+  estudio**. No es una app web: es una **planilla de Google por empresa**
+  (en una carpeta compartida del estudio; cada uno con su mail) con el
+  código `impositiva/apps-script/Code.gs` pegado en Extensiones > Apps
+  Script. El menú "Impositiva > Armar la planilla" crea todo. Nada de datos
+  de clientes en el repo (es público).
+- Una planilla por empresa **para varios ejercicios** (no una por
+  ejercicio); en Datos van inicio y cierre del ejercicio (informativo). Se
+  empieza a usar con ejercicios ya empezados: el primer mes lleva a mano los
+  saldos de la DDJJ anterior (saldo técnico y libre disponibilidad de IVA,
+  saldo a favor de IIBB y de CEI); después pasan solos.
+- Hojas: **Datos**, una hoja por mes **"MM-AAAA"** (Ventas, IVA, Ingresos
+  Brutos, Comercio e Industria y Ventas reales), **Asientos** (con
+  fórmulas, se arma sola), **Otros asientos** (compensaciones, pagos: a
+  mano), **Asientos a importar**, **Plan de cuentas** (el de Onvio, pegado
+  y ordenado con el menú) y **Exportaciones**.
+- **4 asientos por mes**, fecha último día del mes: VENTAS MENSUALES
+  (Deudores por ventas a IVA DF y Ventas), DDJJ IVA <MES>, DDJJ IIBB <MES>,
+  DDJJ CEI <MES>. Siempre los mismos renglones para todas las empresas; lo
+  que da 0 no se exporta. Sueldos y retenciones/percepciones de Ganancias
+  no salen de la impositiva (van, si se quiere, en Otros asientos).
+- IVA: técnico = DF − CF − SUSS − saldo técnico anterior; si da negativo es
+  saldo técnico a favor (no se mezcla con nada). Al impuesto determinado se
+  le restan retenciones, percepciones y la libre disponibilidad anterior
+  (menos lo compensado): positivo = a pagar, negativo = libre
+  disponibilidad. Sin "restitución perc/ret": se carga el neto. Ninguna
+  empresa vende al 27 % (compras sí). SUSS = 1,45 % de la Remuneración 10
+  del F.931 (igual para todas, editable).
+- IIBB: cada actividad con su base y alícuota; determinado = el mayor entre
+  el total y el **mínimo** (editable por mes). CEI: cada rubro con su base,
+  alícuota (‰) y reducción (no todas la tienen); contribución = mayor entre
+  total y mínimo; + 25 % (ítem 23) + 10 % (ítem 26) + fijo (ítem 28,
+  editable). Lo que en la DDJJ de CEI dice "Retenciones" son percepciones.
+  Todo lo determinado va a la cuenta de gasto; lo que queda a pagar, pasivo.
+- Alícuotas, mínimos, % y fijos están en cada mes y pasan al siguiente al
+  crearlo (así cambiar uno no toca los meses viejos).
+- Saldo a favor del mes anterior: aparece un aviso "¿Se compensó?"; lo
+  compensado se pone en el mes (fila "Compensado") y el asiento de la
+  compensación en Otros asientos.
+- Cuentas: en Datos, una lista desplegable por renglón del asiento con las
+  cuentas del plan de **esa** empresa (los planes no son iguales entre
+  empresas: nombres y códigos distintos). "Sugerir las cuentas" las elige
+  solo (por nombre y tipo de cuenta). Nombres repetidos en el plan se
+  distinguen agregando el código.
+- Exportar para Onvio: elige desde/hasta, no deja exportar si un asiento no
+  cierra o falta una cuenta; avisa si hay controles con diferencias o meses
+  ya exportados. Guarda el Excel (formato de importación de Onvio: hoja
+  "Asientos", código de cuenta sin puntos ni barras como texto, debe +,
+  haber −) en la carpeta "Asientos para Onvio" al lado de la planilla. Los
+  números de asiento empiezan en 1 en cada exportación (Onvio los toma
+  bien).
+- "Ventas reales" (estado de resultados) solo se ve si en Datos dice Sí.
+- Pendiente para más adelante: Convenio Multilateral (2 o 3 empresas);
+  código en una biblioteca de Apps Script para no pegarlo en cada planilla.
+- Probado con un simulador de Sheets + LibreOffice con los números de Panda
+  (enero–septiembre 2026: da igual que la planilla vieja y que lo
+  importado a mano en Onvio) y casos de saldo técnico, libre
+  disponibilidad, compensaciones y mínimos.
 
 ## Cómo trabajar con Ignacio
 
