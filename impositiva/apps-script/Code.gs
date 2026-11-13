@@ -112,20 +112,40 @@ var CUENTAS = [
 ];
 
 // ---------- Hoja del mes: celdas ----------
+// Mismo orden en que se llena (pedido de Ignacio, 11/2026):
 // Ventas: filas 6-10, total 11 (D neto, E IVA, F total).
-// IVA: compras 15-17, total 18, SUSS 19, liquidacion 22-35 (columna E).
-// IIBB: actividades 39-48, liquidacion 49-60 (columna F).
-// CEI: rubros 64-73, liquidacion 74-87 (columna G).
+// IIBB: actividades 15-24, liquidacion 25-36 (columna F).
+// CEI: rubros 40-49, liquidacion 50-63 (columna G).
+// IVA: compras 67-69, total 70, SUSS 71, liquidacion 74-87 (columna E).
 // Ventas reales: 89-98.
-var M_SALDOS_ANT = ['E25', 'E31', 'F56', 'G83'];  // vienen del mes anterior
-var M_SALDOS_DE = ['E27', 'E35', 'F60', 'G87'];   // lo que pasa al siguiente
+var M_SALDOS_ANT = ['E77', 'E83', 'F32', 'G59'];  // vienen del mes anterior
+var M_SALDOS_DE = ['E79', 'E87', 'F36', 'G63'];   // lo que pasa al siguiente
 // Lo que pasa al mes siguiente tal cual (se puede cambiar en cada mes).
-var M_PARAMETROS = ['C19', 'E39:E48', 'F50', 'E64:F73', 'G75', 'F77:F78', 'G79'];
-var M_CARGA = ['E6:E9', 'D10', 'J6:K7', 'E15:E17', 'C19:D19', 'E29:E30', 'E32',
+var M_PARAMETROS = ['C71', 'E15:E24', 'F26', 'E40:F49', 'G51', 'F53:F54', 'G55'];
+var M_CARGA = ['E6:E9', 'D10', 'J6:K7', 'E67:E69', 'C71:D71', 'E81:E82', 'E84',
+  'J67:K68', 'J74:J76', 'D16:D24', 'E15:E24', 'F26:F27', 'F29:F31', 'F33',
+  'J16:J17', 'D41:D49', 'E40:F49', 'G51', 'F53:F54', 'G55:G56', 'G58', 'G60',
+  'J41:J42', 'E90'];
+var M_VREALES = [89, 98];
+var M_BASES = ['D15', 'D40'];  // base de la 1ra actividad y del 1er rubro (formula, se puede pisar)
+
+// Hojas de mes armadas antes de 11/2026: tenian IVA antes que IIBB y CEI.
+// "Reparar las formulas" las reconoce y pasa lo cargado a su lugar nuevo.
+var M_CARGA_V1 = ['E6:E9', 'D10', 'J6:K7', 'E15:E17', 'C19:D19', 'E29:E30', 'E32',
   'J15:K16', 'J22:J24', 'D40:D48', 'E39:E48', 'F50:F51', 'F53:F55', 'F57',
   'J40:J41', 'D65:D73', 'E64:F73', 'G75', 'F77:F78', 'G79:G80', 'G82', 'G84',
   'J65:J66', 'E90'];
-var M_VREALES = [89, 98];
+var M_SALDOS_ANT_V1 = ['E25', 'E31', 'F56', 'G83'];
+var M_BASES_V1 = ['D39', 'D64'];
+function esV1_(sh) { return /^2\. IVA/.test(String(sh.getRange('B13').getValue())); }
+function aV2_(a1) {
+  return a1.replace(/([A-Z]+)(\d+)/g, function (m, c, r) {
+    r = +r;
+    if (r >= 13 && r <= 35) r += 52;
+    else if ((r >= 37 && r <= 60) || (r >= 62 && r <= 87)) r -= 24;
+    return c + r;
+  });
+}
 
 // Asientos de cada mes. Tipo: D = debe, H = haber, ± = debe si es
 // positivo, haber si es negativo. {M} = hoja del mes.
@@ -134,27 +154,27 @@ var ASIENTOS = [
     ['deudores', 'D', 'ROUND({M}D11,2)+ROUND({M}E11,2)'],
     ['iva_df', 'H', 'ROUND({M}E11,2)'],
     ['ventas', 'H', 'ROUND({M}D11,2)']] },
-  { n: 2, concepto: 'DDJJ IVA ', mes: true, lineas: [
-    ['iva_df', 'D', '{M}E22'],
-    ['iva_cf', 'H', '{M}E23'],
-    ['iva_suss', 'H', '{M}E24'],
-    ['iva_st', '±', '{M}E27-{M}E25'],
-    ['iva_ret', 'H', '{M}E29'],
-    ['iva_perc', 'H', '{M}E30'],
-    ['iva_sld', '±', '{M}E35-{M}E33'],
-    ['iva_pagar', 'H', '{M}E34']] },
-  { n: 3, concepto: 'DDJJ IIBB ', mes: true, lineas: [
-    ['iibb', 'D', '{M}F52'],
-    ['iibb_ret', 'H', '{M}F53'],
-    ['iibb_perc', 'H', '{M}F54'],
-    ['iibb_rec', 'H', '{M}F55'],
-    ['iibb_sf', '±', '{M}F60-{M}F58'],
-    ['iibb_pagar', 'H', '{M}F59']] },
-  { n: 4, concepto: 'DDJJ CEI ', mes: true, lineas: [
-    ['cei', 'D', '{M}G81'],
-    ['cei_perc', 'H', '{M}G82'],
-    ['cei_sf', '±', '{M}G87-{M}G85'],
-    ['cei_pagar', 'H', '{M}G86']] }
+  { n: 2, concepto: 'DDJJ IIBB ', mes: true, lineas: [
+    ['iibb', 'D', '{M}F28'],
+    ['iibb_ret', 'H', '{M}F29'],
+    ['iibb_perc', 'H', '{M}F30'],
+    ['iibb_rec', 'H', '{M}F31'],
+    ['iibb_sf', '±', '{M}F36-{M}F34'],
+    ['iibb_pagar', 'H', '{M}F35']] },
+  { n: 3, concepto: 'DDJJ CEI ', mes: true, lineas: [
+    ['cei', 'D', '{M}G57'],
+    ['cei_perc', 'H', '{M}G58'],
+    ['cei_sf', '±', '{M}G63-{M}G61'],
+    ['cei_pagar', 'H', '{M}G62']] },
+  { n: 4, concepto: 'DDJJ IVA ', mes: true, lineas: [
+    ['iva_df', 'D', '{M}E74'],
+    ['iva_cf', 'H', '{M}E75'],
+    ['iva_suss', 'H', '{M}E76'],
+    ['iva_st', '±', '{M}E79-{M}E77'],
+    ['iva_ret', 'H', '{M}E81'],
+    ['iva_perc', 'H', '{M}E82'],
+    ['iva_sld', '±', '{M}E87-{M}E85'],
+    ['iva_pagar', 'H', '{M}E86']] }
 ];
 
 // ============================================================
@@ -481,7 +501,7 @@ function armarHojaMes_(ss, sh, nombre, prevSh) {
   p('B2', 'Período');
   p('C2', new Date(anio, mes - 1, 1));
   var ini = D + '$C$' + D_INICIO;
-  p('I2', '=IF(COUNTIF(L4:L70,"✘*")=0,"✔ Controles sin diferencias","✘ Hay "&COUNTIF(L4:L70,"✘*")&" control(es) con diferencias")');
+  p('I2', '=IF(COUNTIF(L4:L87,"✘*")=0,"✔ Controles sin diferencias","✘ Hay "&COUNTIF(L4:L87,"✘*")&" control(es) con diferencias")');
 
   // 1. VENTAS
   p('B4', '1. VENTAS (libro IVA ventas, ya restadas las notas de crédito)');
@@ -504,113 +524,113 @@ function armarHojaMes_(ss, sh, nombre, prevSh) {
   p('L9', '=IF(AND(J6="",K6=""),"– Sin cargar",IF(AND(ABS(J9)<=' + D + '$C$' + D_TOL + ',ABS(K9)<=' + D + '$C$' + D_TOL +
     '),"✔ Coincide","✘ No coincide"))');
 
-  // 2. IVA
-  p('B13', '2. IVA');
-  ['Crédito fiscal (compras, ya restadas las notas de crédito)', 'Alícuota', 'Neto', 'IVA'].forEach(function (t, i) {
-    p(col_(2 + i) + '14', t);
-  });
-  [['Compras 10,5 %', 0.105], ['Compras 21 %', 0.21], ['Compras 27 %', 0.27]].forEach(function (v, i) {
-    var r = 15 + i;
-    p('B' + r, v[0]); p('C' + r, v[1]); p('D' + r, '=E' + r + '/C' + r);
-  });
-  p('B18', 'Total compras'); p('D18', '=SUM(D15:D17)'); p('E18', '=SUM(E15:E17)');
-  p('B19', 'Crédito SUSS: Remuneración 10 del F.931 (en Neto) × alícuota'); p('C19', 0.0145);
-  p('E19', '=ROUND(D19*C19,2)');
-  p('B21', 'Liquidación');
-  var liq = [
-    [22, 'Débito fiscal', '=ROUND(E11,2)'],
-    [23, 'Crédito fiscal', '=ROUND(E18,2)'],
-    [24, 'Crédito SUSS', '=E19'],
-    [25, 'Saldo técnico a favor del mes anterior', null],
-    [26, 'Saldo técnico del mes', '=E22-E23-E24-E25'],
-    [27, 'SALDO TÉCNICO A FAVOR (pasa al mes siguiente)', '=MAX(ROUND(-E26,2),0)'],
-    [28, 'Impuesto determinado', '=MAX(ROUND(E26,2),0)'],
-    [29, 'Retenciones de IVA', null],
-    [30, 'Percepciones de IVA', null],
-    [31, 'Saldo de libre disponibilidad del mes anterior', null],
-    [32, '− Compensado (usado para pagar otro impuesto)', null],
-    [33, 'Libre disponibilidad que queda para usar', '=E31-E32'],
-    [34, 'IVA A PAGAR', '=MAX(ROUND(E28-E29-E30-E33,2),0)'],
-    [35, 'SALDO DE LIBRE DISPONIBILIDAD A FAVOR (pasa al mes siguiente)', '=MAX(ROUND(E29+E30+E33-E28,2),0)']];
-  liq.forEach(function (x) { p('B' + x[0], x[1]); if (x[2]) p('E' + x[0], x[2]); });
-  p('F31', '=IF(E31>0,"⚠ ¿Se compensó? Si se usó, poné cuánto abajo y cargá el asiento en Otros asientos.","")');
-  // Controles IVA
-  p('I13', 'Control con Portal IVA (compras)'); p('J14', 'IVA'); p('K14', 'Neto');
-  p('I15', 'Compras'); p('I16', 'Notas de crédito');
-  p('I17', 'Compras − notas de crédito'); p('J17', '=J15-J16'); p('K17', '=K15-K16');
-  p('I18', 'Diferencia (portal − planilla)'); p('J18', '=J17-E18'); p('K18', '=K17-D18');
-  p('L18', '=IF(AND(J15="",K15=""),"– Sin cargar",IF(AND(ABS(J18)<=' + D + '$C$' + D_TOL + ',ABS(K18)<=' + D + '$C$' + D_TOL +
-    '),"✔ Coincide","✘ No coincide"))');
-  p('I20', 'Control con la DDJJ de IVA presentada'); p('J21', 'Según DDJJ'); p('K21', 'Diferencia');
-  [[22, 'IVA a pagar', 'E34'], [23, 'Saldo técnico a favor', 'E27'], [24, 'Libre disponibilidad a favor', 'E35']]
-    .forEach(function (x) { ctlDDJJ_(p, x[0], x[1], x[2]); });
-
-  // 3. INGRESOS BRUTOS
-  p('B37', '3. INGRESOS BRUTOS');
-  ['Actividad', 'Código', 'Base imponible', 'Alícuota', 'Impuesto'].forEach(function (t, i) { p(col_(2 + i) + '38', t); });
+  // 2. INGRESOS BRUTOS (filas 13 a 36)
+  p('B13', '2. INGRESOS BRUTOS');
+  ['Actividad', 'Código', 'Base imponible', 'Alícuota', 'Impuesto'].forEach(function (t, i) { p(col_(2 + i) + '14', t); });
   for (var i = 0; i < N_ACT; i++) {
-    var r = 39 + i, rd = D_ACT + i;
+    var r = 15 + i, rd = D_ACT + i;
     p('B' + r, i === 0
       ? '=IF(' + D + 'C' + rd + '="","Actividad 1 (completala en Datos)",' + D + 'C' + rd + ')'
       : '=' + D + 'C' + rd + '&""');
     p('C' + r, '=' + D + 'B' + rd + '&""');
     p('F' + r, '=D' + r + '*E' + r);
   }
-  p('D39', '=D11-SUM(D40:D48)');
+  p('D15', '=D11-SUM(D16:D24)');
   var iibb = [
-    [49, 'Total actividades', '=SUM(F39:F48)'],
-    [50, 'Impuesto mínimo', null],
-    [51, 'Ajuste por redondeo (si la DDJJ da distinto por centavos)', null],
-    [52, 'Impuesto determinado (el mayor entre el total y el mínimo)', '=ROUND(MAX(F49,F50),2)+F51'],
-    [53, 'Retenciones', null],
-    [54, 'Percepciones', null],
-    [55, 'Recaudaciones bancarias', null],
-    [56, 'Saldo a favor del mes anterior', null],
-    [57, '− Compensado (usado para pagar otro impuesto)', null],
-    [58, 'Saldo a favor que queda para usar', '=F56-F57'],
-    [59, 'INGRESOS BRUTOS A PAGAR', '=MAX(ROUND(F52-F53-F54-F55-F58,2),0)'],
-    [60, 'SALDO A FAVOR (pasa al mes siguiente)', '=MAX(ROUND(F53+F54+F55+F58-F52,2),0)']];
+    [25, 'Total actividades', '=SUM(F15:F24)'],
+    [26, 'Impuesto mínimo', null],
+    [27, 'Ajuste por redondeo (si la DDJJ da distinto por centavos)', null],
+    [28, 'Impuesto determinado (el mayor entre el total y el mínimo)', '=ROUND(MAX(F25,F26),2)+F27'],
+    [29, 'Retenciones', null],
+    [30, 'Percepciones', null],
+    [31, 'Recaudaciones bancarias', null],
+    [32, 'Saldo a favor del mes anterior', null],
+    [33, '− Compensado (usado para pagar otro impuesto)', null],
+    [34, 'Saldo a favor que queda para usar', '=F32-F33'],
+    [35, 'INGRESOS BRUTOS A PAGAR', '=MAX(ROUND(F28-F29-F30-F31-F34,2),0)'],
+    [36, 'SALDO A FAVOR (pasa al mes siguiente)', '=MAX(ROUND(F29+F30+F31+F34-F28,2),0)']];
   iibb.forEach(function (x) { p('B' + x[0], x[1]); if (x[2]) p('F' + x[0], x[2]); });
-  p('G56', '=IF(F56>0,"⚠ ¿Se compensó? Si se usó, poné cuánto abajo y cargá el asiento en Otros asientos.","")');
-  p('I38', 'Control con la DDJJ de Ingresos Brutos'); p('J39', 'Según DDJJ'); p('K39', 'Diferencia');
-  ctlDDJJ_(p, 40, 'A pagar', 'F59');
-  ctlDDJJ_(p, 41, 'Saldo a favor', 'F60');
+  p('G32', '=IF(F32>0,"⚠ ¿Se compensó? Si se usó, poné cuánto abajo y cargá el asiento en Otros asientos.","")');
+  p('I14', 'Control con la DDJJ de Ingresos Brutos'); p('J15', 'Según DDJJ'); p('K15', 'Diferencia');
+  ctlDDJJ_(p, 16, 'A pagar', 'F35');
+  ctlDDJJ_(p, 17, 'Saldo a favor', 'F36');
 
-  // 4. COMERCIO E INDUSTRIA
-  p('B62', '4. COMERCIO E INDUSTRIA');
+  // 3. COMERCIO E INDUSTRIA (filas 38 a 63)
+  p('B38', '3. COMERCIO E INDUSTRIA');
   ['Rubro', 'Código', 'Base imponible', 'Alícuota (‰)', 'Reducción', 'Monto'].forEach(function (t, i) {
-    p(col_(2 + i) + '63', t);
+    p(col_(2 + i) + '39', t);
   });
   for (var j = 0; j < N_RUB; j++) {
-    var r2 = 64 + j, rd2 = D_RUB + j;
+    var r2 = 40 + j, rd2 = D_RUB + j;
     p('B' + r2, j === 0
       ? '=IF(' + D + 'C' + rd2 + '="","Rubro 1 (completalo en Datos)",' + D + 'C' + rd2 + ')'
       : '=' + D + 'C' + rd2 + '&""');
     p('C' + r2, '=' + D + 'B' + rd2 + '&""');
     p('G' + r2, '=D' + r2 + '*E' + r2 + '/1000*(1-F' + r2 + ')');
   }
-  p('D64', '=D11-SUM(D65:D73)');
+  p('D40', '=D11-SUM(D41:D49)');
   var cei = [
-    [74, 'Total rubros', '=SUM(G64:G73)'],
-    [75, 'Mínimo', null],
-    [76, 'Contribución sobre Comercio, Industria y Servicios (ítem 21)', '=ROUND(MAX(G74,G75),2)'],
-    [77, 'Promoción, difusión, incentivación… (ítem 23)', '=ROUND(MAX(G74,G75)*F77,2)'],
-    [78, 'Fondo Solidario de Inclusión Social (ítem 26)', '=ROUND(MAX(G74,G75)*F78,2)'],
-    [79, 'Promoción de la economía local y la competitividad (ítem 28, fijo)', null],
-    [80, 'Ajuste por redondeo (si la DDJJ da distinto por centavos)', null],
-    [81, 'Total determinado', '=G76+G77+G78+G79+G80'],
-    [82, 'Percepciones (en la DDJJ figuran como "Retenciones", ítem 38)', null],
-    [83, 'Saldo a favor del mes anterior', null],
-    [84, '− Compensado (usado para pagar otro impuesto)', null],
-    [85, 'Saldo a favor que queda para usar', '=G83-G84'],
-    [86, 'COMERCIO E INDUSTRIA A PAGAR', '=MAX(ROUND(G81-G82-G85,2),0)'],
-    [87, 'SALDO A FAVOR (pasa al mes siguiente)', '=MAX(ROUND(G82+G85-G81,2),0)']];
+    [50, 'Total rubros', '=SUM(G40:G49)'],
+    [51, 'Mínimo', null],
+    [52, 'Contribución sobre Comercio, Industria y Servicios (ítem 21)', '=ROUND(MAX(G50,G51),2)'],
+    [53, 'Promoción, difusión, incentivación… (ítem 23)', '=ROUND(MAX(G50,G51)*F53,2)'],
+    [54, 'Fondo Solidario de Inclusión Social (ítem 26)', '=ROUND(MAX(G50,G51)*F54,2)'],
+    [55, 'Promoción de la economía local y la competitividad (ítem 28, fijo)', null],
+    [56, 'Ajuste por redondeo (si la DDJJ da distinto por centavos)', null],
+    [57, 'Total determinado', '=G52+G53+G54+G55+G56'],
+    [58, 'Percepciones (en la DDJJ figuran como "Retenciones", ítem 38)', null],
+    [59, 'Saldo a favor del mes anterior', null],
+    [60, '− Compensado (usado para pagar otro impuesto)', null],
+    [61, 'Saldo a favor que queda para usar', '=G59-G60'],
+    [62, 'COMERCIO E INDUSTRIA A PAGAR', '=MAX(ROUND(G57-G58-G61,2),0)'],
+    [63, 'SALDO A FAVOR (pasa al mes siguiente)', '=MAX(ROUND(G58+G61-G57,2),0)']];
   cei.forEach(function (x) { p('B' + x[0], x[1]); if (x[2]) p('G' + x[0], x[2]); });
-  p('F77', 0.25); p('F78', 0.10);
-  p('H83', '=IF(G83>0,"⚠ ¿Se compensó? Si se usó, poné cuánto abajo y cargá el asiento en Otros asientos.","")');
-  p('I63', 'Control con la DDJJ de Comercio e Industria'); p('J64', 'Según DDJJ'); p('K64', 'Diferencia');
-  ctlDDJJ_(p, 65, 'Monto (ítems 21 + 23 + 26 + 28)', 'G81');
-  ctlDDJJ_(p, 66, 'A pagar', 'G86');
+  p('F53', 0.25); p('F54', 0.10);
+  p('H59', '=IF(G59>0,"⚠ ¿Se compensó? Si se usó, poné cuánto abajo y cargá el asiento en Otros asientos.","")');
+  p('I39', 'Control con la DDJJ de Comercio e Industria'); p('J40', 'Según DDJJ'); p('K40', 'Diferencia');
+  ctlDDJJ_(p, 41, 'Monto (ítems 21 + 23 + 26 + 28)', 'G57');
+  ctlDDJJ_(p, 42, 'A pagar', 'G62');
+
+  // 4. IVA (filas 65 a 87)
+  p('B65', '4. IVA');
+  ['Crédito fiscal (compras, ya restadas las notas de crédito)', 'Alícuota', 'Neto', 'IVA'].forEach(function (t, i) {
+    p(col_(2 + i) + '66', t);
+  });
+  [['Compras 10,5 %', 0.105], ['Compras 21 %', 0.21], ['Compras 27 %', 0.27]].forEach(function (v, i) {
+    var r = 67 + i;
+    p('B' + r, v[0]); p('C' + r, v[1]); p('D' + r, '=E' + r + '/C' + r);
+  });
+  p('B70', 'Total compras'); p('D70', '=SUM(D67:D69)'); p('E70', '=SUM(E67:E69)');
+  p('B71', 'Crédito SUSS: Remuneración 10 del F.931 (en Neto) × alícuota'); p('C71', 0.0145);
+  p('E71', '=ROUND(D71*C71,2)');
+  p('B73', 'Liquidación');
+  var liq = [
+    [74, 'Débito fiscal', '=ROUND(E11,2)'],
+    [75, 'Crédito fiscal', '=ROUND(E70,2)'],
+    [76, 'Crédito SUSS', '=E71'],
+    [77, 'Saldo técnico a favor del mes anterior', null],
+    [78, 'Saldo técnico del mes', '=E74-E75-E76-E77'],
+    [79, 'SALDO TÉCNICO A FAVOR (pasa al mes siguiente)', '=MAX(ROUND(-E78,2),0)'],
+    [80, 'Impuesto determinado', '=MAX(ROUND(E78,2),0)'],
+    [81, 'Retenciones de IVA', null],
+    [82, 'Percepciones de IVA', null],
+    [83, 'Saldo de libre disponibilidad del mes anterior', null],
+    [84, '− Compensado (usado para pagar otro impuesto)', null],
+    [85, 'Libre disponibilidad que queda para usar', '=E83-E84'],
+    [86, 'IVA A PAGAR', '=MAX(ROUND(E80-E81-E82-E85,2),0)'],
+    [87, 'SALDO DE LIBRE DISPONIBILIDAD A FAVOR (pasa al mes siguiente)', '=MAX(ROUND(E81+E82+E85-E80,2),0)']];
+  liq.forEach(function (x) { p('B' + x[0], x[1]); if (x[2]) p('E' + x[0], x[2]); });
+  p('F83', '=IF(E83>0,"⚠ ¿Se compensó? Si se usó, poné cuánto abajo y cargá el asiento en Otros asientos.","")');
+  // Controles IVA
+  p('I65', 'Control con Portal IVA (compras)'); p('J66', 'IVA'); p('K66', 'Neto');
+  p('I67', 'Compras'); p('I68', 'Notas de crédito');
+  p('I69', 'Compras − notas de crédito'); p('J69', '=J67-J68'); p('K69', '=K67-K68');
+  p('I70', 'Diferencia (portal − planilla)'); p('J70', '=J69-E70'); p('K70', '=K69-D70');
+  p('L70', '=IF(AND(J67="",K67=""),"– Sin cargar",IF(AND(ABS(J70)<=' + D + '$C$' + D_TOL + ',ABS(K70)<=' + D + '$C$' + D_TOL +
+    '),"✔ Coincide","✘ No coincide"))');
+  p('I72', 'Control con la DDJJ de IVA presentada'); p('J73', 'Según DDJJ'); p('K73', 'Diferencia');
+  [[74, 'IVA a pagar', 'E86'], [75, 'Saldo técnico a favor', 'E79'], [76, 'Libre disponibilidad a favor', 'E87']]
+    .forEach(function (x) { ctlDDJJ_(p, x[0], x[1], x[2]); });
 
   // 5. VENTAS REALES
   p('B89', '5. VENTAS REALES (para el estado de resultados)');
@@ -619,10 +639,10 @@ function armarHojaMes_(ss, sh, nombre, prevSh) {
   p('B92', 'Ventas declaradas (con IVA)'); p('E92', '=F11');
   p('B93', 'Lo declarado sobre lo real'); p('E93', '=IF(E90=0,0,E92/E90)');
   p('D95', 'Declarado'); p('E95', 'Sobre lo real'); p('F95', 'Diferencia');
-  p('B96', 'IVA débito'); p('D96', '=E22'); p('E96', '=ROUND(E90-E91,2)');
-  p('B97', 'Ingresos Brutos'); p('D97', '=F52'); p('E97', '=ROUND(MAX(E91*E39,F50),2)');
-  p('B98', 'Comercio e Industria'); p('D98', '=G81');
-  p('E98', '=ROUND(MAX(E91*E64/1000*(1-F64),G75)*(1+F77+F78)+G79,2)');
+  p('B96', 'IVA débito'); p('D96', '=E74'); p('E96', '=ROUND(E90-E91,2)');
+  p('B97', 'Ingresos Brutos'); p('D97', '=F28'); p('E97', '=ROUND(MAX(E91*E15,F26),2)');
+  p('B98', 'Comercio e Industria'); p('D98', '=G57');
+  p('E98', '=ROUND(MAX(E91*E40/1000*(1-F40),G51)*(1+F53+F54)+G55,2)');
   [96, 97, 98].forEach(function (r) { p('F' + r, '=E' + r + '-D' + r); });
 
   // Saldos del mes anterior y parametros
@@ -667,41 +687,41 @@ function formatoMes_(ss, sh, primerMes) {
     .setHorizontalAlignment('left');
   sh.getRange('I1:L1').merge().setFontStyle('italic');
   sh.getRange('I2:L2').merge().setFontWeight('bold');
-  sh.getRangeList(['B4:G4', 'B13:G13', 'B37:G37', 'B62:G62', 'B89:G89'])
+  sh.getRangeList(['B4:G4', 'B65:G65', 'B13:G13', 'B38:G38', 'B89:G89'])
     .setBackground(COLOR.seccion).setFontColor('#ffffff').setFontWeight('bold');
-  sh.getRangeList(['I4:L4', 'I13:L13', 'I20:L20', 'I38:L38', 'I63:L63'])
+  sh.getRangeList(['I4:L4', 'I65:L65', 'I72:L72', 'I14:L14', 'I39:L39'])
     .setBackground(COLOR.cabecera).setFontWeight('bold');
-  sh.getRangeList(['B5:F5', 'B14:E14', 'B38:F38', 'B63:G63', 'J5:K5', 'J14:K14', 'J21:K21',
-    'J39:K39', 'J64:K64', 'D95:F95', 'B21'])
+  sh.getRangeList(['B5:F5', 'B66:E66', 'B14:F14', 'B39:G39', 'J5:K5', 'J66:K66', 'J73:K73',
+    'J15:K15', 'J40:K40', 'D95:F95', 'B73'])
     .setFontWeight('bold').setBackground(COLOR.total);
-  sh.getRangeList(['B11:F11', 'B18:E18', 'B49:F49', 'B52:F52', 'B74:G74', 'B81:G81', 'B26:E26', 'B28:E28'])
+  sh.getRangeList(['B11:F11', 'B70:E70', 'B25:F25', 'B28:F28', 'B50:G50', 'B57:G57', 'B78:E78', 'B80:E80'])
     .setFontWeight('bold');
-  sh.getRangeList(['B27:E27', 'B34:E35', 'B59:F60', 'B86:G87'])
+  sh.getRangeList(['B79:E79', 'B86:E87', 'B35:F36', 'B62:G63'])
     .setFontWeight('bold').setBackground(COLOR.resultado);
-  sh.getRangeList(['D6:F11', 'D15:E19', 'E22:E35', 'D39:D48', 'F39:F60', 'D64:D73', 'G64:G87',
-    'J6:K9', 'J15:K18', 'J22:K24', 'J40:K41', 'J65:K66', 'E90:E92', 'D96:F98'])
+  sh.getRangeList(['D6:F11', 'D67:E71', 'E74:E87', 'D15:D24', 'F15:F36', 'D40:D49', 'G40:G63',
+    'J6:K9', 'J67:K70', 'J74:K76', 'J16:K17', 'J41:K42', 'E90:E92', 'D96:F98'])
     .setNumberFormat(FMT_PESOS);
-  sh.getRangeList(['C6:C9', 'C15:C17', 'E39:E48', 'F64:F73', 'F77:F78', 'E93']).setNumberFormat('0.00%');
-  sh.getRange('C19').setNumberFormat('0.00%');
-  sh.getRange('E64:E73').setNumberFormat('0.00');
+  sh.getRangeList(['C6:C9', 'C67:C69', 'E15:E24', 'F40:F49', 'F53:F54', 'E93']).setNumberFormat('0.00%');
+  sh.getRange('C71').setNumberFormat('0.00%');
+  sh.getRange('E40:E49').setNumberFormat('0.00');
   var carga = M_CARGA.slice();
   if (primerMes) carga = carga.concat(M_SALDOS_ANT);
   sh.getRangeList(carga).setBackground(COLOR.carga);
-  sh.getRangeList(['D39', 'D64']).setBackground('#fffaeb');
-  sh.getRange('D39').setNote('Se calcula sola: ventas netas menos las otras actividades. ' +
+  sh.getRangeList(M_BASES).setBackground('#fffaeb');
+  sh.getRange('D15').setNote('Se calcula sola: ventas netas menos las otras actividades. ' +
     'Si hay una sola actividad no hace falta tocar nada.');
-  sh.getRange('D64').setNote('Se calcula sola: ventas netas menos los otros rubros. ' +
+  sh.getRange('D40').setNote('Se calcula sola: ventas netas menos los otros rubros. ' +
     'Si hay un solo rubro no hace falta tocar nada.');
-  sh.getRange('D19').setNote('Remuneración 10 del F.931 del mes.');
+  sh.getRange('D71').setNote('Remuneración 10 del F.931 del mes.');
   if (primerMes) {
     sh.getRangeList(M_SALDOS_ANT).setNote('Primer mes de la planilla: cargá a mano el saldo que viene ' +
       'de la DDJJ anterior. Desde el mes siguiente pasa solo.');
   }
-  sh.getRange('E39:E48').setNote('Alícuota de la actividad (ej. 4 %). Pasa sola al mes siguiente.');
-  sh.getRangeList(['F50', 'G75', 'G79']).setNote('Lo actualizan ustedes cuando cambia. Pasa solo al mes siguiente.');
-  reglasEstado_(sh, ['L4:L70', 'I2:L2']);
+  sh.getRange('E15:E24').setNote('Alícuota de la actividad (ej. 4 %). Pasa sola al mes siguiente.');
+  sh.getRangeList(['F26', 'G51', 'G55']).setNote('Lo actualizan ustedes cuando cambia. Pasa solo al mes siguiente.');
+  reglasEstado_(sh, ['L4:L87', 'I2:L2']);
   var alerta = SpreadsheetApp.newConditionalFormatRule().whenTextStartsWith('⚠')
-    .setFontColor('#9c5700').setBold(true).setRanges([sh.getRange('F31'), sh.getRange('G56'), sh.getRange('H83')]).build();
+    .setFontColor('#9c5700').setBold(true).setRanges([sh.getRange('F83'), sh.getRange('G32'), sh.getRange('H59')]).build();
   var reglas = sh.getConditionalFormatRules();
   reglas.push(alerta);
   sh.setConditionalFormatRules(reglas);
@@ -710,7 +730,7 @@ function formatoMes_(ss, sh, primerMes) {
   sh.setFrozenRows(2);
   var prot = sh.protect().setDescription('Fórmulas del mes (avisa antes de cambiar una fórmula)');
   prot.setWarningOnly(true);
-  var libres = carga.concat(['D39', 'D64']);
+  var libres = carga.concat(M_BASES);
   prot.setUnprotectedRanges(libres.map(function (a1) { return sh.getRange(a1); }));
 }
 
@@ -728,7 +748,9 @@ function repararFormulas() {
   asegurarHojas_(ss);
   var n = enIngles_(ss, function () { return repararTodo_(ss); });
   mostrarVentasReales_(ss);
-  ui.alert('Listo: fórmulas reparadas en Datos, ' + n + ' mes(es), Asientos, Otros asientos y Plan de cuentas.');
+  ui.alert('Listo: fórmulas reparadas en Datos, ' + n.meses + ' mes(es), Asientos, Otros asientos y Plan de cuentas.' +
+    (n.movidos ? '\n\n' + n.movidos + ' mes(es) pasaron al orden nuevo (Ventas, Ingresos Brutos, Comercio e ' +
+      'Industria, IVA), con lo cargado en su lugar.' : ''));
 }
 
 function repararTodo_(ss) {
@@ -747,24 +769,31 @@ function repararTodo_(ss) {
   otros.getRange(2, 9, N_OTROS, 2).setFormulas(fo.map(function (f) { return [f[1], f[2]]; }));
   // Meses: se guarda lo cargado, se rearma la hoja y se vuelve a poner.
   var meses = listarMeses_(ss);
+  var movidos = 0;
   meses.forEach(function (m, i) {
     var sh = m.hoja;
     var prev = i > 0 ? meses[i - 1].hoja : null;
-    var carga = M_CARGA.concat(prev ? [] : M_SALDOS_ANT);
-    var guardado = carga.map(function (a1) { return [a1, sh.getRange(a1).getValues()]; });
-    // Si en D39 o D64 escribieron un numero en vez de la formula, se respeta.
-    var bases = ['D39', 'D64'].map(function (a1) {
+    var v1 = esV1_(sh);
+    if (v1) movidos++;
+    var carga = (v1 ? M_CARGA_V1 : M_CARGA).concat(prev ? [] : (v1 ? M_SALDOS_ANT_V1 : M_SALDOS_ANT));
+    var guardado = carga.map(function (a1) { return [v1 ? aV2_(a1) : a1, sh.getRange(a1).getValues()]; });
+    // Si en la base de la 1ra actividad o del 1er rubro escribieron un numero
+    // en vez de la formula, se respeta.
+    var bases = (v1 ? M_BASES_V1 : M_BASES).map(function (a1, k) {
       var rg = sh.getRange(a1);
-      return [a1, rg.getFormula() ? null : rg.getValue()];
+      return [M_BASES[k], rg.getFormula() ? null : rg.getValue()];
     });
     sh.getProtections(SpreadsheetApp.ProtectionType.SHEET).forEach(function (pr) { pr.remove(); });
     sh.setConditionalFormatRules([]);
+    // Colores, notas y celdas unidas se arman de nuevo (si la hoja era del
+    // orden viejo, quedarian en lugares que ya no corresponden).
+    sh.getRange(1, 1, M_VREALES[1] + 5, 12).breakApart().clearFormat().clearNote();
     armarHojaMes_(ss, sh, m.nombre, prev);
     guardado.forEach(function (x) { sh.getRange(x[0]).setValues(x[1]); });
     bases.forEach(function (x) { if (x[1] !== null && x[1] !== '') sh.getRange(x[0]).setValue(x[1]); });
   });
   rearmarAsientos_(ss);
-  return meses.length;
+  return { meses: meses.length, movidos: movidos };
 }
 
 // ============================================================

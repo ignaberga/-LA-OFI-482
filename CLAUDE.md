@@ -291,14 +291,15 @@ quiere armar.
   empieza a usar con ejercicios ya empezados: el primer mes lleva a mano los
   saldos de la DDJJ anterior (saldo técnico y libre disponibilidad de IVA,
   saldo a favor de IIBB y de CEI); después pasan solos.
-- Hojas: **Datos**, una hoja por mes **"MM-AAAA"** (Ventas, IVA, Ingresos
-  Brutos, Comercio e Industria y Ventas reales), **Asientos** (con
+- Hojas: **Datos**, una hoja por mes **"MM-AAAA"** (en el orden en que la
+  llenan: Ventas, Ingresos Brutos, Comercio e Industria, IVA y Ventas
+  reales; pedido de Ignacio 11/2026), **Asientos** (con
   fórmulas, se arma sola), **Otros asientos** (compensaciones, pagos: a
   mano), **Asientos a importar**, **Plan de cuentas** (el de Onvio, pegado
   y ordenado con el menú) y **Exportaciones**.
-- **4 asientos por mes**, fecha último día del mes: VENTAS MENSUALES
-  (Deudores por ventas a IVA DF y Ventas), DDJJ IVA <MES>, DDJJ IIBB <MES>,
-  DDJJ CEI <MES>. Siempre los mismos renglones para todas las empresas; lo
+- **4 asientos por mes**, fecha último día del mes, en el mismo orden que la
+  hoja: VENTAS MENSUALES (Deudores por ventas a IVA DF y Ventas), DDJJ IIBB
+  <MES>, DDJJ CEI <MES>, DDJJ IVA <MES>. Siempre los mismos renglones para todas las empresas; lo
   que da 0 no se exporta. Sueldos y retenciones/percepciones de Ganancias
   no salen de la impositiva (van, si se quiere, en Otros asientos).
 - IVA: técnico = DF − CF − SUSS − saldo técnico anterior; si da negativo es
@@ -341,7 +342,9 @@ quiere armar.
   (`repararFormulas`): reescribe las fórmulas de todas las hojas sin tocar
   lo cargado (guarda las celdas amarillas de cada mes, rearma la hoja y
   las vuelve a poner). Usarlo también después de pegar una versión nueva
-  del código que cambie fórmulas.
+  del código que cambie fórmulas. Las hojas de mes del orden viejo (IVA
+  en la fila 13) las reconoce (`esV1_`) y pasa lo cargado a su lugar nuevo
+  (`M_CARGA_V1` → `aV2_`). Si se vuelve a cambiar el orden, hacer lo mismo.
 - Pendiente para más adelante: Convenio Multilateral (2 o 3 empresas);
   código en una biblioteca de Apps Script para no pegarlo en cada planilla.
 - Probado con un simulador de Sheets + LibreOffice con los números de Panda
