@@ -332,6 +332,16 @@ quiere armar.
   números de asiento empiezan en 1 en cada exportación (Onvio los toma
   bien).
 - "Ventas reales" (estado de resultados) solo se ve si en Datos dice Sí.
+- **Idioma de la planilla:** Google lee las fórmulas que escribe el código
+  según el idioma de la planilla (en castellano van con punto y coma) y
+  las del código están en inglés (con coma): la primera prueba de Ignacio
+  dio #ERROR! en todas. Por eso todo lo que escribe fórmulas va dentro de
+  `enIngles_` (la planilla pasa a en_US un momento y vuelve; sin ventanas
+  que esperen al usuario adentro). Menú **"Reparar las fórmulas"**
+  (`repararFormulas`): reescribe las fórmulas de todas las hojas sin tocar
+  lo cargado (guarda las celdas amarillas de cada mes, rearma la hoja y
+  las vuelve a poner). Usarlo también después de pegar una versión nueva
+  del código que cambie fórmulas.
 - Pendiente para más adelante: Convenio Multilateral (2 o 3 empresas);
   código en una biblioteca de Apps Script para no pegarlo en cada planilla.
 - Probado con un simulador de Sheets + LibreOffice con los números de Panda

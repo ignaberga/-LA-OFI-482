@@ -168,6 +168,7 @@ function onOpen() {
     .addItem('Ordenar el plan de cuentas (después de pegarlo)', 'ordenarPlan')
     .addItem('Sugerir las cuentas de los asientos', 'sugerirCuentas')
     .addItem('Rearmar la hoja Asientos', 'rearmarAsientos')
+    .addItem('Reparar las fórmulas (después de actualizar el código)', 'repararFormulas')
     .addSeparator()
     .addItem('Armar la planilla (primera vez)', 'armarPlanilla')
     .addToUi();
@@ -213,25 +214,56 @@ function armarPlanilla() {
 }
 
 // ============================================================
+// FORMULAS EN INGLES
+// ============================================================
+// Google lee las formulas segun el idioma de la planilla (en castellano,
+// separadas con punto y coma). Las de este codigo estan en ingles (con
+// coma): mientras se escriben, la planilla pasa a ingles un momento y
+// despues vuelve a como estaba. Los datos no cambian. Adentro no puede
+// haber ventanas que esperen al usuario.
+var profundidadIngles_ = 0;
+function enIngles_(ss, fn) {
+  var antes = ss.getSpreadsheetLocale();
+  var cambiar = profundidadIngles_ === 0 && antes !== 'en_US';
+  profundidadIngles_++;
+  try {
+    if (cambiar) {
+      ss.setSpreadsheetLocale('en_US');
+      SpreadsheetApp.flush();
+    }
+    return fn();
+  } finally {
+    profundidadIngles_--;
+    if (cambiar) {
+      SpreadsheetApp.flush();
+      ss.setSpreadsheetLocale(antes);
+      SpreadsheetApp.flush();
+    }
+  }
+}
+
+// ============================================================
 // HOJAS FIJAS
 // ============================================================
 function asegurarHojas_(ss) {
-  var antes = ss.getSheets().length;
-  if (!ss.getSheetByName(HOJA_PLAN)) armarPlan_(ss.insertSheet(HOJA_PLAN));
-  if (!ss.getSheetByName(HOJA_DATOS)) armarDatos_(ss.insertSheet(HOJA_DATOS, 0));
-  if (!ss.getSheetByName(HOJA_ASIENTOS)) ss.insertSheet(HOJA_ASIENTOS);
-  if (!ss.getSheetByName(HOJA_OTROS)) armarOtros_(ss.insertSheet(HOJA_OTROS));
-  if (!ss.getSheetByName(HOJA_IMPORTAR)) armarImportar_(ss.insertSheet(HOJA_IMPORTAR));
-  if (!ss.getSheetByName(HOJA_EXPORT)) armarExportaciones_(ss.insertSheet(HOJA_EXPORT));
-  if (ss.getSheets().length === antes) return;
-  // Orden: Datos, meses, Asientos, Otros, A importar, Plan, Exportaciones.
-  var orden = [HOJA_ASIENTOS, HOJA_OTROS, HOJA_IMPORTAR, HOJA_PLAN, HOJA_EXPORT];
-  orden.forEach(function (n) {
-    ss.setActiveSheet(ss.getSheetByName(n));
-    ss.moveActiveSheet(ss.getSheets().length);
+  var fijas = [HOJA_PLAN, HOJA_DATOS, HOJA_ASIENTOS, HOJA_OTROS, HOJA_IMPORTAR, HOJA_EXPORT];
+  if (fijas.every(function (n) { return ss.getSheetByName(n); })) return;
+  enIngles_(ss, function () {
+    if (!ss.getSheetByName(HOJA_PLAN)) armarPlan_(ss.insertSheet(HOJA_PLAN));
+    if (!ss.getSheetByName(HOJA_DATOS)) armarDatos_(ss.insertSheet(HOJA_DATOS, 0));
+    if (!ss.getSheetByName(HOJA_ASIENTOS)) ss.insertSheet(HOJA_ASIENTOS);
+    if (!ss.getSheetByName(HOJA_OTROS)) armarOtros_(ss.insertSheet(HOJA_OTROS));
+    if (!ss.getSheetByName(HOJA_IMPORTAR)) armarImportar_(ss.insertSheet(HOJA_IMPORTAR));
+    if (!ss.getSheetByName(HOJA_EXPORT)) armarExportaciones_(ss.insertSheet(HOJA_EXPORT));
+    // Orden: Datos, meses, Asientos, Otros, A importar, Plan, Exportaciones.
+    var orden = [HOJA_ASIENTOS, HOJA_OTROS, HOJA_IMPORTAR, HOJA_PLAN, HOJA_EXPORT];
+    orden.forEach(function (n) {
+      ss.setActiveSheet(ss.getSheetByName(n));
+      ss.moveActiveSheet(ss.getSheets().length);
+    });
+    ss.setActiveSheet(ss.getSheetByName(HOJA_DATOS));
+    ss.moveActiveSheet(1);
   });
-  ss.setActiveSheet(ss.getSheetByName(HOJA_DATOS));
-  ss.moveActiveSheet(1);
 }
 
 function armarDatos_(sh) {
@@ -241,7 +273,7 @@ function armarDatos_(sh) {
   pone_(g, 'B' + D_CUIT, 'CUIT');
   pone_(g, 'B' + D_INICIO, 'Inicio del ejercicio (ej. 01/07/2025)');
   pone_(g, 'B' + D_CIERRE, 'Cierre del ejercicio');
-  pone_(g, 'C' + D_CIERRE, '=IF(C' + D_INICIO + '="","",EDATE(C' + D_INICIO + ',12)-1)');
+  pone_(g, 'C' + D_CIERRE, formulaCierre_());
   pone_(g, 'B' + D_ER, '¿Le hacemos estado de resultados? (muestra Ventas reales)');
   pone_(g, 'C' + D_ER, 'No');
   pone_(g, 'B' + D_TOL, 'Diferencia aceptada contra el Portal IVA ($)');
@@ -257,12 +289,12 @@ function armarDatos_(sh) {
   pone_(g, 'C' + (D_CTA - 1), 'Cuenta del plan');
   pone_(g, 'D' + (D_CTA - 1), 'Código');
   pone_(g, 'E' + (D_CTA - 1), 'Código para Onvio');
-  var plan = "'" + HOJA_PLAN + "'!$A:$C";
+  var fc = formulasCuentas_();
   CUENTAS.forEach(function (c, i) {
     var r = D_CTA + i;
     pone_(g, 'B' + r, c[1]);
-    pone_(g, 'D' + r, '=IF(C' + r + '="","",IFERROR(VLOOKUP(C' + r + ',' + plan + ',2,FALSE),"✘ No está en el plan"))');
-    pone_(g, 'E' + r, '=IF(C' + r + '="","",IFERROR(VLOOKUP(C' + r + ',' + plan + ',3,FALSE),""))');
+    pone_(g, 'D' + r, fc[i][0]);
+    pone_(g, 'E' + r, fc[i][1]);
   });
   sh.getRange(1, 1, g.length, g[0].length).setValues(g);
 
@@ -297,6 +329,40 @@ function armarDatos_(sh) {
   sh.setFrozenRows(1);
 }
 
+function formulaCierre_() {
+  return '=IF(C' + D_INICIO + '="","",EDATE(C' + D_INICIO + ',12)-1)';
+}
+
+// Columnas D (codigo) y E (codigo para Onvio) de las cuentas en Datos.
+function formulasCuentas_() {
+  var plan = "'" + HOJA_PLAN + "'!$A:$C";
+  return CUENTAS.map(function (c, i) {
+    var r = D_CTA + i;
+    return ['=IF(C' + r + '="","",IFERROR(VLOOKUP(C' + r + ',' + plan + ',2,FALSE),"✘ No está en el plan"))',
+      '=IF(C' + r + '="","",IFERROR(VLOOKUP(C' + r + ',' + plan + ',3,FALSE),""))'];
+  });
+}
+
+// Columnas E, I y J de Otros asientos (renglones 2 a n+1).
+var N_OTROS = 500;
+function formulasOtros_() {
+  var plan = "'" + HOJA_PLAN + "'!$A:$C", n = N_OTROS, res = [];
+  for (var r = 2; r <= n + 1; r++) {
+    res.push([
+      '=IF(D' + r + '="","",IFERROR(VLOOKUP(D' + r + ',' + plan + ',2,FALSE),"✘ No está en el plan"))',
+      '=IF(B' + r + '="","",IF(ABS(SUMIF($B$2:$B$' + (n + 1) + ',B' + r + ',$F$2:$F$' + (n + 1) +
+        ')-SUMIF($B$2:$B$' + (n + 1) + ',B' + r + ',$G$2:$G$' + (n + 1) + '))<0.005,"✔ Cierra","✘ No cierra"))',
+      '=IF(D' + r + '="","",IFERROR(VLOOKUP(D' + r + ',' + plan + ',3,FALSE),""))']);
+  }
+  return res;
+}
+
+function formulasPlan_(n) {
+  var f = [];
+  for (var r = 2; r < n + 2; r++) f.push(['=SUBSTITUTE(SUBSTITUTE(B' + r + '&"",".",""),"/","")']);
+  return f;
+}
+
 function armarPlan_(sh) {
   sh.getRange('A1:C1').setValues([['Cuenta', 'Código', 'Código para Onvio']])
     .setFontWeight('bold').setBackground(COLOR.cabecera);
@@ -309,16 +375,14 @@ function armarPlan_(sh) {
 }
 
 function armarOtros_(sh) {
-  var n = 500;
+  var n = N_OTROS;
   var g = grilla_(n + 1, 10);
   g[0] = ['Fecha', 'Nº', 'Concepto', 'Cuenta', 'Código', 'Debe', 'Haber', 'Leyenda', 'Control', 'Código Onvio'];
-  var plan = "'" + HOJA_PLAN + "'!$A:$C";
-  for (var r = 2; r <= n + 1; r++) {
-    g[r - 1][4] = '=IF(D' + r + '="","",IFERROR(VLOOKUP(D' + r + ',' + plan + ',2,FALSE),"✘ No está en el plan"))';
-    g[r - 1][8] = '=IF(B' + r + '="","",IF(ABS(SUMIF($B$2:$B$' + (n + 1) + ',B' + r + ',$F$2:$F$' + (n + 1) +
-      ')-SUMIF($B$2:$B$' + (n + 1) + ',B' + r + ',$G$2:$G$' + (n + 1) + '))<0.005,"✔ Cierra","✘ No cierra"))';
-    g[r - 1][9] = '=IF(D' + r + '="","",IFERROR(VLOOKUP(D' + r + ',' + plan + ',3,FALSE),""))';
-  }
+  formulasOtros_().forEach(function (f, i) {
+    g[i + 1][4] = f[0];
+    g[i + 1][8] = f[1];
+    g[i + 1][9] = f[2];
+  });
   sh.getRange(1, 1, g.length, 10).setValues(g);
   sh.getRange('A1:J1').setFontWeight('bold').setBackground(COLOR.cabecera);
   sh.getRange('A1').setNote('Compensaciones, pagos y cualquier otro asiento. Los renglones del mismo ' +
@@ -395,9 +459,12 @@ function agregarMes() {
     return;
   }
   var pos = prev ? prev.hoja.getIndex() : ss.getSheetByName(HOJA_DATOS).getIndex();
-  var sh = ss.insertSheet(nombre, pos);
-  armarHojaMes_(ss, sh, nombre, prev ? prev.hoja : null);
-  rearmarAsientos_(ss);
+  var sh = enIngles_(ss, function () {
+    var nueva = ss.insertSheet(nombre, pos);
+    armarHojaMes_(ss, nueva, nombre, prev ? prev.hoja : null);
+    rearmarAsientos_(ss);
+    return nueva;
+  });
   ss.setActiveSheet(sh);
   ss.toast('Listo el mes ' + nombre + '. Pasaron las alícuotas, mínimos y saldos del mes anterior.',
     'Impositiva', 6);
@@ -568,8 +635,11 @@ function armarHojaMes_(ss, sh, nombre, prevSh) {
   // Ejercicio (se arma aca para no repetir la formula larga arriba)
   var mesIni = 'MONTH(' + ini + ')', diaIni = 'DAY(' + ini + ')';
   var desde = 'DATE(YEAR($C$2)-IF(MONTH($C$2)<' + mesIni + ',1,0),' + mesIni + ',' + diaIni + ')';
-  g[0][8] = '=IF(' + ini + '="","","Ejercicio del "&TEXT(' + desde + ',"dd/mm/yyyy")&" al "&TEXT(EDATE(' +
-    desde + ',12)-1,"dd/mm/yyyy"))';
+  var hasta = 'EDATE(' + desde + ',12)-1';
+  var fecha = function (x) {
+    return 'RIGHT("0"&DAY(' + x + '),2)&"/"&RIGHT("0"&MONTH(' + x + '),2)&"/"&YEAR(' + x + ')';
+  };
+  g[0][8] = '=IF(' + ini + '="","","Ejercicio del "&' + fecha(desde) + '&" al "&' + fecha(hasta) + ')';
 
   sh.getRange(1, 1, g.length, g[0].length).setValues(g);
   if (prevSh) {
@@ -645,12 +715,65 @@ function formatoMes_(ss, sh, primerMes) {
 }
 
 // ============================================================
+// REPARAR LAS FORMULAS (sin tocar lo cargado)
+// ============================================================
+function repararFormulas() {
+  var ss = SpreadsheetApp.getActive();
+  var ui = SpreadsheetApp.getUi();
+  var r = ui.alert('Reparar las fórmulas',
+    'Se vuelven a escribir todas las fórmulas de la planilla (Datos, meses, Asientos, Otros asientos ' +
+    'y Plan de cuentas). Lo que está cargado (las celdas amarillas) no se toca. ¿Seguimos?',
+    ui.ButtonSet.OK_CANCEL);
+  if (r !== ui.Button.OK) return;
+  asegurarHojas_(ss);
+  var n = enIngles_(ss, function () { return repararTodo_(ss); });
+  mostrarVentasReales_(ss);
+  ui.alert('Listo: fórmulas reparadas en Datos, ' + n + ' mes(es), Asientos, Otros asientos y Plan de cuentas.');
+}
+
+function repararTodo_(ss) {
+  // Datos
+  var datos = ss.getSheetByName(HOJA_DATOS);
+  datos.getRange('C' + D_CIERRE).setFormula(formulaCierre_());
+  datos.getRange(D_CTA, 4, CUENTAS.length, 2).setFormulas(formulasCuentas_());
+  // Plan de cuentas
+  var plan = ss.getSheetByName(HOJA_PLAN);
+  var nPlan = Math.max(plan.getLastRow() - 1, 0);
+  if (nPlan) plan.getRange(2, 3, nPlan, 1).setFormulas(formulasPlan_(nPlan));
+  // Otros asientos
+  var otros = ss.getSheetByName(HOJA_OTROS);
+  var fo = formulasOtros_();
+  otros.getRange(2, 5, N_OTROS, 1).setFormulas(fo.map(function (f) { return [f[0]]; }));
+  otros.getRange(2, 9, N_OTROS, 2).setFormulas(fo.map(function (f) { return [f[1], f[2]]; }));
+  // Meses: se guarda lo cargado, se rearma la hoja y se vuelve a poner.
+  var meses = listarMeses_(ss);
+  meses.forEach(function (m, i) {
+    var sh = m.hoja;
+    var prev = i > 0 ? meses[i - 1].hoja : null;
+    var carga = M_CARGA.concat(prev ? [] : M_SALDOS_ANT);
+    var guardado = carga.map(function (a1) { return [a1, sh.getRange(a1).getValues()]; });
+    // Si en D39 o D64 escribieron un numero en vez de la formula, se respeta.
+    var bases = ['D39', 'D64'].map(function (a1) {
+      var rg = sh.getRange(a1);
+      return [a1, rg.getFormula() ? null : rg.getValue()];
+    });
+    sh.getProtections(SpreadsheetApp.ProtectionType.SHEET).forEach(function (pr) { pr.remove(); });
+    sh.setConditionalFormatRules([]);
+    armarHojaMes_(ss, sh, m.nombre, prev);
+    guardado.forEach(function (x) { sh.getRange(x[0]).setValues(x[1]); });
+    bases.forEach(function (x) { if (x[1] !== null && x[1] !== '') sh.getRange(x[0]).setValue(x[1]); });
+  });
+  rearmarAsientos_(ss);
+  return meses.length;
+}
+
+// ============================================================
 // HOJA ASIENTOS (con formulas, una tanda por mes)
 // ============================================================
 function rearmarAsientos() {
   var ss = SpreadsheetApp.getActive();
   asegurarHojas_(ss);
-  rearmarAsientos_(ss);
+  enIngles_(ss, function () { rearmarAsientos_(ss); });
   mostrarVentasReales_(ss);
   ss.toast('Hoja Asientos rearmada.', 'Impositiva', 4);
 }
@@ -735,13 +858,13 @@ function ordenarPlan() {
       HOJA_PLAN + '" y probá de nuevo.');
     return;
   }
-  sh.clear();
-  armarPlan_(sh);
-  sh.getRange(2, 2, res.length, 1).setNumberFormat('@');
-  sh.getRange(2, 1, res.length, 2).setValues(res);
-  var f = [];
-  for (var r = 2; r < res.length + 2; r++) f.push(['=SUBSTITUTE(SUBSTITUTE(B' + r + '&"",".",""),"/","")']);
-  sh.getRange(2, 3, res.length, 1).setFormulas(f);
+  enIngles_(ss, function () {
+    sh.clear();
+    armarPlan_(sh);
+    sh.getRange(2, 2, res.length, 1).setNumberFormat('@');
+    sh.getRange(2, 1, res.length, 2).setValues(res);
+    sh.getRange(2, 3, res.length, 1).setFormulas(formulasPlan_(res.length));
+  });
   ss.toast(res.length + ' cuentas ordenadas.', 'Impositiva', 5);
 }
 
@@ -900,7 +1023,7 @@ function exportarOnvio(desde, hasta, incluirOtros, forzar) {
   var enHoja = {};
   lineas.forEach(function (f) { if (f[9]) enHoja[f[9]] = true; });
   if (nombres.some(function (n) { return !enHoja[n]; })) {
-    rearmarAsientos_(ss);
+    enIngles_(ss, function () { rearmarAsientos_(ss); });
     SpreadsheetApp.flush();
     lineas = asi.getRange(3, 1, asi.getLastRow() - 2, 10).getValues();
   }
