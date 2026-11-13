@@ -107,7 +107,6 @@ var CUENTAS = [
   ['iibb_pagar', 'IIBB – Ingresos Brutos a pagar', ['impuesto a los ingresos brutos a pagar'], '2'],
   ['cei', 'CEI – Comercio e Industria (gasto)', ['tasa comercio e industria', 'comercio e industria'], '4'],
   ['cei_perc', 'CEI – Percepciones', ['percepciones comercio e industria'], '1'],
-  ['cei_sf', 'CEI – Saldo a favor', ['saldo a favor comercio e industria'], '1'],
   ['cei_pagar', 'CEI – Comercio e Industria a pagar', ['tasa comercio e industria a pagar', 'comercio e industria a pagar'], '2']
 ];
 
@@ -118,13 +117,14 @@ var CUENTAS = [
 // CEI: rubros 40-49, liquidacion 50-63 (columna G).
 // IVA: compras 67-69, total 70, SUSS 71, liquidacion 74-87 (columna E).
 // Ventas reales: 89-98.
-var M_SALDOS_ANT = ['E77', 'E83', 'F32', 'G59'];  // vienen del mes anterior
-var M_SALDOS_DE = ['E79', 'E87', 'F36', 'G63'];   // lo que pasa al siguiente
+var M_SALDOS_ANT = ['E77', 'E83', 'F32'];  // vienen del mes anterior (IVA tecnico, IVA libre disp., IIBB)
+var M_SALDOS_DE = ['E79', 'E87', 'F36'];   // lo que pasa al siguiente
+var VERSION_MES = 4;                        // version actual de la hoja del mes (ver versionMes_)
 // Lo que pasa al mes siguiente tal cual (se puede cambiar en cada mes).
 var M_PARAMETROS = ['C71', 'E15:E24', 'F26', 'E40:F49', 'E51', 'F52:F53', 'D54:E54'];
 var M_CARGA = ['E6:E9', 'D10', 'J6:K7', 'E67:E69', 'C71:D71', 'E81:E82', 'E84',
   'J67:K68', 'J74:J76', 'D16:D24', 'E15:E24', 'F26:F27', 'F29:F31', 'F33',
-  'J16:J17', 'D41:D49', 'E40:F49', 'E51', 'F52:F53', 'D54:E54', 'G56', 'G58', 'G60',
+  'J16:J17', 'D41:D49', 'E40:F49', 'E51', 'F52:F53', 'D54:E54', 'G56', 'G58',
   'J41:J42', 'E90'];
 var M_VREALES = [89, 98];
 var M_BASES = ['D15', 'D40'];  // base de la 1ra actividad y del 1er rubro (formula, se puede pisar)
@@ -134,7 +134,14 @@ var M_BASES = ['D15', 'D40'];  // base de la 1ra actividad y del 1er rubro (form
 // Version 1 (hasta 11/2026): IVA antes que IIBB y CEI.
 // Version 2: el orden de ahora, pero en CEI el minimo era un solo numero
 // (G51) y el item 28 uno solo (G55). Version 3: CEI con columnas "Segun
-// alicuota" y "Minimo" (cada una con su item 28).
+// alicuota" y "Minimo" (cada una con su item 28). Version 4: CEI sin saldo
+// a favor (nunca da a favor; pedido de Ignacio 11/2026): sin saldo anterior
+// (G59) ni compensado (G60); el "a pagar" paso de G62 a G59.
+var M_CARGA_V3 = ['E6:E9', 'D10', 'J6:K7', 'E67:E69', 'C71:D71', 'E81:E82', 'E84',
+  'J67:K68', 'J74:J76', 'D16:D24', 'E15:E24', 'F26:F27', 'F29:F31', 'F33',
+  'J16:J17', 'D41:D49', 'E40:F49', 'E51', 'F52:F53', 'D54:E54', 'G56', 'G58', 'G60',
+  'J41:J42', 'E90'];
+var M_SALDOS_ANT_V3 = ['E77', 'E83', 'F32', 'G59'];  // versiones 2 y 3
 var M_CARGA_V2 = ['E6:E9', 'D10', 'J6:K7', 'E67:E69', 'C71:D71', 'E81:E82', 'E84',
   'J67:K68', 'J74:J76', 'D16:D24', 'E15:E24', 'F26:F27', 'F29:F31', 'F33',
   'J16:J17', 'D41:D49', 'E40:F49', 'G51', 'F53:F54', 'G55:G56', 'G58', 'G60',
@@ -148,8 +155,14 @@ var M_BASES_V1 = ['D39', 'D64'];
 // vals: valores de A1:L98 de la hoja del mes.
 function versionMes_(vals) {
   if (/^2\. IVA/.test(String(vals[12][1]))) return 1;
-  if (String(vals[49][3]) === 'Según alícuota') return 3;
-  return 2;
+  if (String(vals[49][3]) !== 'Según alícuota') return 2;
+  if (/^Saldo a favor/.test(String(vals[58][1]))) return 3;
+  return 4;
+}
+// Celda de la version 3 -> version 4 (null = ya no existe).
+function aV4_(a1) {
+  var m = { G59: null, G60: null, G62: 'G59' };
+  return a1 in m ? m[a1] : a1;
 }
 // Celda de la version 2 -> version 3 (solo cambia CEI).
 function aV3_(a1) {
@@ -159,6 +172,7 @@ function aV3_(a1) {
 function aActual_(a1, version) {
   if (version === 1) a1 = aV2_(a1);
   if (version <= 2) a1 = aV3_(a1);
+  if (version <= 3) a1 = aV4_(a1);
   return a1;
 }
 // 'E6:E9' -> ['E6', 'E7', 'E8', 'E9']
@@ -193,8 +207,7 @@ var ASIENTOS = [
   { n: 3, concepto: 'DDJJ CEI ', mes: true, lineas: [
     ['cei', 'D', '{M}G57'],
     ['cei_perc', 'H', '{M}G58'],
-    ['cei_sf', '±', '{M}G63-{M}G61'],
-    ['cei_pagar', 'H', '{M}G62']] },
+    ['cei_pagar', 'H', '{M}G59']] },
   { n: 4, concepto: 'DDJJ IVA ', mes: true, lineas: [
     ['iva_df', 'D', '{M}E74'],
     ['iva_cf', 'H', '{M}E75'],
@@ -504,9 +517,9 @@ function agregarMesAnterior() {
     return;
   }
   var ver = versionMes_(primero.hoja.getRange(1, 1, M_VREALES[1], 12).getValues());
-  var nombres = ['Saldo técnico de IVA', 'Libre disponibilidad de IVA', 'Saldo a favor de IIBB',
-    'Saldo a favor de Comercio e Industria'];
-  var lista = (ver === 1 ? M_SALDOS_ANT_V1 : M_SALDOS_ANT).map(function (a1, k) {
+  var nombres = ['Saldo técnico de IVA', 'Libre disponibilidad de IVA', 'Saldo a favor de IIBB'];
+  var viejos = ver === 1 ? M_SALDOS_ANT_V1 : ver <= 3 ? M_SALDOS_ANT_V3 : M_SALDOS_ANT;
+  var lista = viejos.slice(0, 3).map(function (a1, k) {
     var x = Number(primero.hoja.getRange(a1).getValue()) || 0;
     return '- ' + nombres[k] + ': ' + x.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   }).join('\n');
@@ -518,7 +531,7 @@ function agregarMesAnterior() {
     ' no cambia. ¿Seguimos?', ui.ButtonSet.OK_CANCEL);
   if (r !== ui.Button.OK) return;
   var sh = enIngles_(ss, function () {
-    if (ver < 3) repararMes_(ss, primero.hoja, null);
+    if (ver < VERSION_MES) repararMes_(ss, primero.hoja, null);
     var nueva = ss.insertSheet(nombre, primero.hoja.getIndex() - 1);
     armarHojaMes_(ss, nueva, nombre, null);
     M_PARAMETROS.forEach(function (a1) {
@@ -569,7 +582,7 @@ function agregarMes() {
   var sh = enIngles_(ss, function () {
     // Si el mes anterior es de una version vieja de la hoja, primero se
     // actualiza (si no, los parametros que pasan quedarian corridos).
-    if (prev && versionMes_(prev.hoja.getRange(1, 1, M_VREALES[1], 12).getValues()) < 3) {
+    if (prev && versionMes_(prev.hoja.getRange(1, 1, M_VREALES[1], 12).getValues()) < VERSION_MES) {
       repararMes_(ss, prev.hoja, meses.length > 1 ? meses[meses.length - 2].hoja : null);
     }
     var nueva = ss.insertSheet(nombre, pos);
@@ -683,17 +696,13 @@ function armarHojaMes_(ss, sh, nombre, prevSh, guardados) {
     [56, 'Ajuste por redondeo (si la DDJJ da distinto por centavos)', null],
     [57, 'Total determinado', '=G55+G56'],
     [58, 'Percepciones (en la DDJJ figuran como "Retenciones", ítem 38)', null],
-    [59, 'Saldo a favor del mes anterior', null],
-    [60, '− Compensado (usado para pagar otro impuesto)', null],
-    [61, 'Saldo a favor que queda para usar', '=G59-G60'],
-    [62, 'COMERCIO E INDUSTRIA A PAGAR', '=MAX(ROUND(G57-G58-G61,2),0)'],
-    [63, 'SALDO A FAVOR (pasa al mes siguiente)', '=MAX(ROUND(G58+G61-G57,2),0)']];
+    [59, 'COMERCIO E INDUSTRIA A PAGAR', '=MAX(ROUND(G57-G58,2),0)']];
   cei.forEach(function (x) { p('B' + x[0], x[1]); if (x[2]) p('G' + x[0], x[2]); });
   p('F52', 0.25); p('F53', 0.10);
-  p('H59', '=IF(G59>0,"⚠ ¿Se compensó? Si se usó, poné cuánto abajo y cargá el asiento en Otros asientos.","")');
+  p('H59', '=IF(G58>G57,"⚠ Las percepciones son más que el impuesto: revisalas (el asiento no va a cerrar).","")');
   p('I39', 'Control con la DDJJ de Comercio e Industria'); p('J40', 'Según DDJJ'); p('K40', 'Diferencia');
   ctlDDJJ_(p, 41, 'Monto (ítems 21 + 23 + 26 + 28)', 'G57');
-  ctlDDJJ_(p, 42, 'A pagar', 'G62');
+  ctlDDJJ_(p, 42, 'A pagar', 'G59');
 
   // 4. IVA (filas 65 a 87)
   p('B65', '4. IVA');
@@ -801,9 +810,9 @@ function formatoMes_(ss, sh, primerMes) {
     .setFontWeight('bold').setBackground(COLOR.total);
   sh.getRangeList(['B11:F11', 'B70:F70', 'B25:F25', 'B28:F28', 'B55:G55', 'B57:G57', 'B78:E78', 'B80:E80', 'H51'])
     .setFontWeight('bold');
-  sh.getRangeList(['B79:E79', 'B86:E87', 'B35:F36', 'B62:G63'])
+  sh.getRangeList(['B79:E79', 'B86:E87', 'B35:F36', 'B59:G59'])
     .setFontWeight('bold').setBackground(COLOR.resultado);
-  sh.getRangeList(['D6:F11', 'D67:E71', 'F67:F70', 'E74:E87', 'D15:D24', 'F15:F36', 'D40:D49', 'G40:G63', 'D51:E55',
+  sh.getRangeList(['D6:F11', 'D67:E71', 'F67:F70', 'E74:E87', 'D15:D24', 'F15:F36', 'D40:D49', 'G40:G59', 'D51:E55',
     'J6:K9', 'J67:K70', 'J74:K76', 'J16:K17', 'J41:K42', 'E90:E92', 'D96:F98'])
     .setNumberFormat(FMT_PESOS);
   sh.getRangeList(['C6:C9', 'C67:C69', 'E15:E24', 'F40:F49', 'F52:F53', 'E93']).setNumberFormat('0.00%');
@@ -863,6 +872,7 @@ function repararFormulas() {
 
 function repararTodo_(ss) {
   // Datos
+  migrarDatos_(ss);
   var datos = ss.getSheetByName(HOJA_DATOS);
   datos.getRange('C' + D_CIERRE).setFormula(formulaCierre_());
   datos.getRange(D_CTA, 4, CUENTAS.length, 2).setFormulas(formulasCuentas_());
@@ -892,13 +902,13 @@ function repararMes_(ss, sh, prev) {
   var vals = sh.getRange(1, 1, M_VREALES[1], 12).getValues();
   var forms = sh.getRange(1, 1, M_VREALES[1], 12).getFormulas();
   var ver = versionMes_(vals);
-  var lista = (ver === 1 ? M_CARGA_V1 : ver === 2 ? M_CARGA_V2 : M_CARGA)
-    .concat(prev ? [] : (ver === 1 ? M_SALDOS_ANT_V1 : M_SALDOS_ANT));
+  var lista = (ver === 1 ? M_CARGA_V1 : ver === 2 ? M_CARGA_V2 : ver === 3 ? M_CARGA_V3 : M_CARGA)
+    .concat(prev ? [] : (ver === 1 ? M_SALDOS_ANT_V1 : ver <= 3 ? M_SALDOS_ANT_V3 : M_SALDOS_ANT));
   var guardados = {};
   lista.forEach(function (rango) {
     celdas_(rango).forEach(function (a1) {
-      var q = a1rc_(a1);
-      guardados[aActual_(a1, ver)] = vals[q.r - 1][q.c - 1];
+      var q = a1rc_(a1), dest = aActual_(a1, ver);
+      if (dest) guardados[dest] = vals[q.r - 1][q.c - 1];
     });
   });
   // Si en la base de la 1ra actividad o del 1er rubro escribieron un numero
@@ -913,7 +923,7 @@ function repararMes_(ss, sh, prev) {
   // version vieja, quedarian en lugares que ya no corresponden).
   sh.getRange(1, 1, M_VREALES[1] + 5, 12).breakApart().clearFormat().clearNote();
   armarHojaMes_(ss, sh, sh.getName(), prev, guardados);
-  return ver < 3;
+  return ver < VERSION_MES;
 }
 
 // ============================================================
@@ -932,7 +942,30 @@ function filaCuenta_(clave) {
   throw new Error('Cuenta desconocida: ' + clave);
 }
 
+// Datos armado antes de sacar "CEI – Saldo a favor" (11/2026): ese renglon
+// estaba antes de "CEI – Comercio e Industria a pagar". Se saca y la cuenta
+// elegida para "a pagar" sube un renglon. Va dentro de enIngles_.
+function datosViejos_(ss) {
+  var d = ss.getSheetByName(HOJA_DATOS);
+  return !!d && String(d.getRange('B' + (D_CTA + CUENTAS.length - 1)).getValue()) === 'CEI – Saldo a favor';
+}
+
+function migrarDatos_(ss) {
+  if (!datosViejos_(ss)) return false;
+  var d = ss.getSheetByName(HOJA_DATOS);
+  var ult = D_CTA + CUENTAS.length - 1;  // renglon de "CEI – a pagar" ahora
+  var pagar = d.getRange('C' + (ult + 1)).getValue();
+  d.getRange('B' + ult + ':C' + ult).setValues([[CUENTAS[CUENTAS.length - 1][1], pagar]]);
+  d.getRange('D' + ult + ':E' + ult).setFormulas([formulasCuentas_()[CUENTAS.length - 1]]);
+  var sobra = d.getRange('B' + (ult + 1) + ':E' + (ult + 1));
+  sobra.clearContent();
+  sobra.clearDataValidations();
+  sobra.setBackground(null);
+  return true;
+}
+
 function rearmarAsientos_(ss) {
+  migrarDatos_(ss);
   var sh = ss.getSheetByName(HOJA_ASIENTOS);
   var meses = listarMeses_(ss);
   var D = "'" + HOJA_DATOS + "'!";
@@ -1047,6 +1080,7 @@ function normal_(s) {
 function sugerirCuentas() {
   var ss = SpreadsheetApp.getActive();
   asegurarHojas_(ss);
+  if (datosViejos_(ss)) enIngles_(ss, function () { migrarDatos_(ss); rearmarAsientos_(ss); });
   var plan = ss.getSheetByName(HOJA_PLAN).getDataRange().getValues().slice(1)
     .map(function (f) { return [String(f[0]).trim(), String(f[1]).trim()]; })
     .filter(function (f) { return f[0] && f[1]; });

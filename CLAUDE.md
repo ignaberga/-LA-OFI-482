@@ -290,7 +290,7 @@ quiere armar.
   ejercicio); en Datos van inicio y cierre del ejercicio (informativo). Se
   empieza a usar con ejercicios ya empezados: el primer mes lleva a mano los
   saldos de la DDJJ anterior (saldo técnico y libre disponibilidad de IVA,
-  saldo a favor de IIBB y de CEI); después pasan solos.
+  saldo a favor de IIBB); después pasan solos.
 - Hojas: **Datos**, una hoja por mes **"MM-AAAA"** (en el orden en que la
   llenan: Ventas, Ingresos Brutos, Comercio e Industria, IVA y Ventas
   reales; pedido de Ignacio 11/2026), **Asientos** (con
@@ -317,7 +317,12 @@ quiere armar.
   contribución, **sin reducción**, + 25 % + 10 % + su propio monto mínimo
   del ítem 28); se compara **total contra total** y la columna "DDJJ" toma
   la más alta (decisiones de Ignacio, 11/2026). Lo que en la DDJJ de CEI
-  dice "Retenciones" son percepciones.
+  dice "Retenciones" son percepciones. **CEI nunca da saldo a favor**
+  (Ignacio, 11/2026): a pagar = total determinado − percepciones; si las
+  percepciones fueran más, aviso en H59 y el asiento no cierra (no se
+  exporta). Sin saldo anterior, compensado ni cuenta "CEI – Saldo a favor"
+  (`migrarDatos_` saca ese renglón de Datos viejos y sube la cuenta de "a
+  pagar").
   Todo lo determinado va a la cuenta de gasto; lo que queda a pagar, pasivo.
 - Alícuotas, mínimos, % y fijos están en cada mes y pasan al siguiente al
   crearlo (así cambiar uno no toca los meses viejos).
@@ -355,8 +360,9 @@ quiere armar.
   las vuelve a poner). Usarlo también después de pegar una versión nueva
   del código que cambie fórmulas. Reconoce las versiones viejas de la hoja
   del mes (`versionMes_`: 1 = IVA en la fila 13; 2 = CEI con un solo
-  mínimo en G51 e ítem 28 en G55; 3 = la actual) y pasa lo cargado a su
-  lugar nuevo (`M_CARGA_V1`/`M_CARGA_V2` → `aActual_`). Si se vuelve a
+  mínimo en G51 e ítem 28 en G55; 3 = CEI con saldo a favor en G59–G63;
+  4 = la actual, `VERSION_MES`) y pasa lo cargado a su lugar nuevo
+  (`M_CARGA_V1/V2/V3` → `aActual_`; lo que ya no existe se descarta). Si se vuelve a
   mover una celda cargable, agregar una versión igual. "Agregar el mes
   siguiente" actualiza solo el mes anterior si es de una versión vieja.
 - Pendiente para más adelante: Convenio Multilateral (2 o 3 empresas);
