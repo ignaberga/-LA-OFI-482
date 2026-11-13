@@ -311,9 +311,13 @@ quiere armar.
   del F.931 (igual para todas, editable).
 - IIBB: cada actividad con su base y alícuota; determinado = el mayor entre
   el total y el **mínimo** (editable por mes). CEI: cada rubro con su base,
-  alícuota (‰) y reducción (no todas la tienen); contribución = mayor entre
-  total y mínimo; + 25 % (ítem 23) + 10 % (ítem 26) + fijo (ítem 28,
-  editable). Lo que en la DDJJ de CEI dice "Retenciones" son percepciones.
+  alícuota (‰) y reducción (no todas la tienen). Liquidación **lado a lado**
+  (como la planilla vieja de Panda): columna "Según alícuota" (contribución
+  + 25 % ítem 23 + 10 % ítem 26 + ítem 28) y columna "Mínimo" (mínimo de la
+  contribución, **sin reducción**, + 25 % + 10 % + su propio monto mínimo
+  del ítem 28); se compara **total contra total** y la columna "DDJJ" toma
+  la más alta (decisiones de Ignacio, 11/2026). Lo que en la DDJJ de CEI
+  dice "Retenciones" son percepciones.
   Todo lo determinado va a la cuenta de gasto; lo que queda a pagar, pasivo.
 - Alícuotas, mínimos, % y fijos están en cada mes y pasan al siguiente al
   crearlo (así cambiar uno no toca los meses viejos).
@@ -349,9 +353,12 @@ quiere armar.
   (`repararFormulas`): reescribe las fórmulas de todas las hojas sin tocar
   lo cargado (guarda las celdas amarillas de cada mes, rearma la hoja y
   las vuelve a poner). Usarlo también después de pegar una versión nueva
-  del código que cambie fórmulas. Las hojas de mes del orden viejo (IVA
-  en la fila 13) las reconoce (`esV1_`) y pasa lo cargado a su lugar nuevo
-  (`M_CARGA_V1` → `aV2_`). Si se vuelve a cambiar el orden, hacer lo mismo.
+  del código que cambie fórmulas. Reconoce las versiones viejas de la hoja
+  del mes (`versionMes_`: 1 = IVA en la fila 13; 2 = CEI con un solo
+  mínimo en G51 e ítem 28 en G55; 3 = la actual) y pasa lo cargado a su
+  lugar nuevo (`M_CARGA_V1`/`M_CARGA_V2` → `aActual_`). Si se vuelve a
+  mover una celda cargable, agregar una versión igual. "Agregar el mes
+  siguiente" actualiza solo el mes anterior si es de una versión vieja.
 - Pendiente para más adelante: Convenio Multilateral (2 o 3 empresas);
   código en una biblioteca de Apps Script para no pegarlo en cada planilla.
 - Probado con un simulador de Sheets + LibreOffice con los números de Panda

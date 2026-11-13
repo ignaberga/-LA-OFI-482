@@ -121,23 +121,52 @@ var CUENTAS = [
 var M_SALDOS_ANT = ['E77', 'E83', 'F32', 'G59'];  // vienen del mes anterior
 var M_SALDOS_DE = ['E79', 'E87', 'F36', 'G63'];   // lo que pasa al siguiente
 // Lo que pasa al mes siguiente tal cual (se puede cambiar en cada mes).
-var M_PARAMETROS = ['C71', 'E15:E24', 'F26', 'E40:F49', 'G51', 'F53:F54', 'G55'];
+var M_PARAMETROS = ['C71', 'E15:E24', 'F26', 'E40:F49', 'E51', 'F52:F53', 'D54:E54'];
 var M_CARGA = ['E6:E9', 'D10', 'J6:K7', 'E67:E69', 'C71:D71', 'E81:E82', 'E84',
   'J67:K68', 'J74:J76', 'D16:D24', 'E15:E24', 'F26:F27', 'F29:F31', 'F33',
-  'J16:J17', 'D41:D49', 'E40:F49', 'G51', 'F53:F54', 'G55:G56', 'G58', 'G60',
+  'J16:J17', 'D41:D49', 'E40:F49', 'E51', 'F52:F53', 'D54:E54', 'G56', 'G58', 'G60',
   'J41:J42', 'E90'];
 var M_VREALES = [89, 98];
 var M_BASES = ['D15', 'D40'];  // base de la 1ra actividad y del 1er rubro (formula, se puede pisar)
 
-// Hojas de mes armadas antes de 11/2026: tenian IVA antes que IIBB y CEI.
-// "Reparar las formulas" las reconoce y pasa lo cargado a su lugar nuevo.
+// Versiones viejas de la hoja del mes. "Reparar las formulas" las reconoce
+// (versionMes_) y pasa lo cargado a su lugar nuevo.
+// Version 1 (hasta 11/2026): IVA antes que IIBB y CEI.
+// Version 2: el orden de ahora, pero en CEI el minimo era un solo numero
+// (G51) y el item 28 uno solo (G55). Version 3: CEI con columnas "Segun
+// alicuota" y "Minimo" (cada una con su item 28).
+var M_CARGA_V2 = ['E6:E9', 'D10', 'J6:K7', 'E67:E69', 'C71:D71', 'E81:E82', 'E84',
+  'J67:K68', 'J74:J76', 'D16:D24', 'E15:E24', 'F26:F27', 'F29:F31', 'F33',
+  'J16:J17', 'D41:D49', 'E40:F49', 'G51', 'F53:F54', 'G55:G56', 'G58', 'G60',
+  'J41:J42', 'E90'];
 var M_CARGA_V1 = ['E6:E9', 'D10', 'J6:K7', 'E15:E17', 'C19:D19', 'E29:E30', 'E32',
   'J15:K16', 'J22:J24', 'D40:D48', 'E39:E48', 'F50:F51', 'F53:F55', 'F57',
   'J40:J41', 'D65:D73', 'E64:F73', 'G75', 'F77:F78', 'G79:G80', 'G82', 'G84',
   'J65:J66', 'E90'];
 var M_SALDOS_ANT_V1 = ['E25', 'E31', 'F56', 'G83'];
 var M_BASES_V1 = ['D39', 'D64'];
-function esV1_(sh) { return /^2\. IVA/.test(String(sh.getRange('B13').getValue())); }
+// vals: valores de A1:L98 de la hoja del mes.
+function versionMes_(vals) {
+  if (/^2\. IVA/.test(String(vals[12][1]))) return 1;
+  if (String(vals[49][3]) === 'Según alícuota') return 3;
+  return 2;
+}
+// Celda de la version 2 -> version 3 (solo cambia CEI).
+function aV3_(a1) {
+  return { G51: 'E51', F53: 'F52', F54: 'F53', G55: 'D54' }[a1] || a1;
+}
+// Celda de cualquier version -> la de ahora.
+function aActual_(a1, version) {
+  if (version === 1) a1 = aV2_(a1);
+  if (version <= 2) a1 = aV3_(a1);
+  return a1;
+}
+// 'E6:E9' -> ['E6', 'E7', 'E8', 'E9']
+function celdas_(rango) {
+  var x = rango.split(':'), p = a1rc_(x[0]), q = a1rc_(x[1] || x[0]), res = [];
+  for (var r = p.r; r <= q.r; r++) for (var c = p.c; c <= q.c; c++) res.push(col_(c) + r);
+  return res;
+}
 function aV2_(a1) {
   return a1.replace(/([A-Z]+)(\d+)/g, function (m, c, r) {
     r = +r;
@@ -474,10 +503,10 @@ function agregarMesAnterior() {
     ui.alert('La hoja ' + nombre + ' ya existe.');
     return;
   }
-  var v1 = esV1_(primero.hoja);
+  var ver = versionMes_(primero.hoja.getRange(1, 1, M_VREALES[1], 12).getValues());
   var nombres = ['Saldo técnico de IVA', 'Libre disponibilidad de IVA', 'Saldo a favor de IIBB',
     'Saldo a favor de Comercio e Industria'];
-  var lista = (v1 ? M_SALDOS_ANT_V1 : M_SALDOS_ANT).map(function (a1, k) {
+  var lista = (ver === 1 ? M_SALDOS_ANT_V1 : M_SALDOS_ANT).map(function (a1, k) {
     var x = Number(primero.hoja.getRange(a1).getValue()) || 0;
     return '- ' + nombres[k] + ': ' + x.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   }).join('\n');
@@ -489,7 +518,7 @@ function agregarMesAnterior() {
     ' no cambia. ¿Seguimos?', ui.ButtonSet.OK_CANCEL);
   if (r !== ui.Button.OK) return;
   var sh = enIngles_(ss, function () {
-    if (v1) repararMes_(ss, primero.hoja, null);
+    if (ver < 3) repararMes_(ss, primero.hoja, null);
     var nueva = ss.insertSheet(nombre, primero.hoja.getIndex() - 1);
     armarHojaMes_(ss, nueva, nombre, null);
     M_PARAMETROS.forEach(function (a1) {
@@ -538,6 +567,11 @@ function agregarMes() {
   }
   var pos = prev ? prev.hoja.getIndex() : ss.getSheetByName(HOJA_DATOS).getIndex();
   var sh = enIngles_(ss, function () {
+    // Si el mes anterior es de una version vieja de la hoja, primero se
+    // actualiza (si no, los parametros que pasan quedarian corridos).
+    if (prev && versionMes_(prev.hoja.getRange(1, 1, M_VREALES[1], 12).getValues()) < 3) {
+      repararMes_(ss, prev.hoja, meses.length > 1 ? meses[meses.length - 2].hoja : null);
+    }
     var nueva = ss.insertSheet(nombre, pos);
     armarHojaMes_(ss, nueva, nombre, prev ? prev.hoja : null);
     rearmarAsientos_(ss);
@@ -548,7 +582,9 @@ function agregarMes() {
     'Impositiva', 6);
 }
 
-function armarHojaMes_(ss, sh, nombre, prevSh) {
+// guardados (opcional, al reparar): {celda: valor} de lo cargado, que se
+// vuelve a poner (y entonces no se copian los parametros del mes anterior).
+function armarHojaMes_(ss, sh, nombre, prevSh, guardados) {
   var D = "'" + HOJA_DATOS + "'!";
   var g = grilla_(M_VREALES[1], 12);
   var p = function (a1, v) { pone_(g, a1, v); };
@@ -627,15 +663,25 @@ function armarHojaMes_(ss, sh, nombre, prevSh) {
     p('G' + r2, '=D' + r2 + '*E' + r2 + '/1000*(1-F' + r2 + ')');
   }
   p('D40', '=D11-SUM(D41:D49)');
+  // Liquidacion lado a lado: segun alicuota (D) y minimo (E). A la DDJJ (G)
+  // va la columna con el total mas alto. El minimo no lleva reduccion.
+  var usaMin = 'AND(E51>0,E55>D55)';
+  p('B50', 'Liquidación (va a la DDJJ la columna con el total más alto)');
+  p('D50', 'Según alícuota'); p('E50', 'Mínimo'); p('F50', '%'); p('G50', 'DDJJ');
+  p('D51', '=ROUND(SUM(G40:G49),2)');
+  p('D52', '=ROUND(SUM(G40:G49)*F52,2)'); p('E52', '=ROUND(E51*F52,2)');
+  p('D53', '=ROUND(SUM(G40:G49)*F53,2)'); p('E53', '=ROUND(E51*F53,2)');
+  p('D55', '=SUM(D51:D54)'); p('E55', '=SUM(E51:E54)');
+  [51, 52, 53, 54, 55].forEach(function (r) { p('G' + r, '=IF(' + usaMin + ',E' + r + ',D' + r + ')'); });
+  p('H51', '=IF(' + usaMin + ',"◀ Se paga el MÍNIMO","◀ Se paga según alícuota")');
   var cei = [
-    [50, 'Total rubros', '=SUM(G40:G49)'],
-    [51, 'Mínimo', null],
-    [52, 'Contribución sobre Comercio, Industria y Servicios (ítem 21)', '=ROUND(MAX(G50,G51),2)'],
-    [53, 'Promoción, difusión, incentivación… (ítem 23)', '=ROUND(MAX(G50,G51)*F53,2)'],
-    [54, 'Fondo Solidario de Inclusión Social (ítem 26)', '=ROUND(MAX(G50,G51)*F54,2)'],
-    [55, 'Promoción de la economía local y la competitividad (ítem 28, fijo)', null],
+    [51, 'Contribución sobre Comercio, Industria y Servicios (ítem 21)', null],
+    [52, 'Promoción, difusión, incentivación… (ítem 23)', null],
+    [53, 'Fondo Solidario de Inclusión Social (ítem 26)', null],
+    [54, 'Promoción de la economía local y la competitividad (ítem 28)', null],
+    [55, 'Total', null],
     [56, 'Ajuste por redondeo (si la DDJJ da distinto por centavos)', null],
-    [57, 'Total determinado', '=G52+G53+G54+G55+G56'],
+    [57, 'Total determinado', '=G55+G56'],
     [58, 'Percepciones (en la DDJJ figuran como "Retenciones", ítem 38)', null],
     [59, 'Saldo a favor del mes anterior', null],
     [60, '− Compensado (usado para pagar otro impuesto)', null],
@@ -643,7 +689,7 @@ function armarHojaMes_(ss, sh, nombre, prevSh) {
     [62, 'COMERCIO E INDUSTRIA A PAGAR', '=MAX(ROUND(G57-G58-G61,2),0)'],
     [63, 'SALDO A FAVOR (pasa al mes siguiente)', '=MAX(ROUND(G58+G61-G57,2),0)']];
   cei.forEach(function (x) { p('B' + x[0], x[1]); if (x[2]) p('G' + x[0], x[2]); });
-  p('F53', 0.25); p('F54', 0.10);
+  p('F52', 0.25); p('F53', 0.10);
   p('H59', '=IF(G59>0,"⚠ ¿Se compensó? Si se usó, poné cuánto abajo y cargá el asiento en Otros asientos.","")');
   p('I39', 'Control con la DDJJ de Comercio e Industria'); p('J40', 'Según DDJJ'); p('K40', 'Diferencia');
   ctlDDJJ_(p, 41, 'Monto (ítems 21 + 23 + 26 + 28)', 'G57');
@@ -700,7 +746,7 @@ function armarHojaMes_(ss, sh, nombre, prevSh) {
   p('B96', 'IVA débito'); p('D96', '=E74'); p('E96', '=ROUND(E90-E91,2)');
   p('B97', 'Ingresos Brutos'); p('D97', '=F28'); p('E97', '=ROUND(MAX(E91*E15,F26),2)');
   p('B98', 'Comercio e Industria'); p('D98', '=G57');
-  p('E98', '=ROUND(MAX(E91*E40/1000*(1-F40),G51)*(1+F53+F54)+G55,2)');
+  p('E98', '=ROUND(MAX(E91*E40/1000*(1-F40)*(1+F52+F53)+D54,IF(E51>0,E51*(1+F52+F53)+E54,0)),2)');
   [96, 97, 98].forEach(function (r) { p('F' + r, '=E' + r + '-D' + r); });
 
   // Saldos del mes anterior y parametros
@@ -719,8 +765,9 @@ function armarHojaMes_(ss, sh, nombre, prevSh) {
   };
   g[0][8] = '=IF(' + ini + '="","","Ejercicio del "&' + fecha(desde) + '&" al "&' + fecha(hasta) + ')';
 
+  if (guardados) Object.keys(guardados).forEach(function (a1) { p(a1, guardados[a1]); });
   sh.getRange(1, 1, g.length, g[0].length).setValues(g);
-  if (prevSh) {
+  if (prevSh && !guardados) {
     M_PARAMETROS.forEach(function (a1) {
       sh.getRange(a1).setValues(prevSh.getRange(a1).getValues());
     });
@@ -750,16 +797,16 @@ function formatoMes_(ss, sh, primerMes) {
   sh.getRangeList(['I4:L4', 'I65:L65', 'I72:L72', 'I14:L14', 'I39:L39'])
     .setBackground(COLOR.cabecera).setFontWeight('bold');
   sh.getRangeList(['B5:F5', 'B66:E66', 'B14:F14', 'B39:G39', 'J5:K5', 'J66:K66', 'J73:K73',
-    'J15:K15', 'J40:K40', 'D95:F95', 'B73'])
+    'J15:K15', 'J40:K40', 'D95:F95', 'B73', 'B50:G50'])
     .setFontWeight('bold').setBackground(COLOR.total);
-  sh.getRangeList(['B11:F11', 'B70:E70', 'B25:F25', 'B28:F28', 'B50:G50', 'B57:G57', 'B78:E78', 'B80:E80'])
+  sh.getRangeList(['B11:F11', 'B70:E70', 'B25:F25', 'B28:F28', 'B55:G55', 'B57:G57', 'B78:E78', 'B80:E80', 'H51'])
     .setFontWeight('bold');
   sh.getRangeList(['B79:E79', 'B86:E87', 'B35:F36', 'B62:G63'])
     .setFontWeight('bold').setBackground(COLOR.resultado);
-  sh.getRangeList(['D6:F11', 'D67:E71', 'E74:E87', 'D15:D24', 'F15:F36', 'D40:D49', 'G40:G63',
+  sh.getRangeList(['D6:F11', 'D67:E71', 'E74:E87', 'D15:D24', 'F15:F36', 'D40:D49', 'G40:G63', 'D51:E55',
     'J6:K9', 'J67:K70', 'J74:K76', 'J16:K17', 'J41:K42', 'E90:E92', 'D96:F98'])
     .setNumberFormat(FMT_PESOS);
-  sh.getRangeList(['C6:C9', 'C67:C69', 'E15:E24', 'F40:F49', 'F53:F54', 'E93']).setNumberFormat('0.00%');
+  sh.getRangeList(['C6:C9', 'C67:C69', 'E15:E24', 'F40:F49', 'F52:F53', 'E93']).setNumberFormat('0.00%');
   sh.getRange('C71').setNumberFormat('0.00%');
   sh.getRange('E40:E49').setNumberFormat('0.00');
   var carga = M_CARGA.slice();
@@ -776,7 +823,10 @@ function formatoMes_(ss, sh, primerMes) {
       'de la DDJJ anterior. Desde el mes siguiente pasa solo.');
   }
   sh.getRange('E15:E24').setNote('Alícuota de la actividad (ej. 4 %). Pasa sola al mes siguiente.');
-  sh.getRangeList(['F26', 'G51', 'G55']).setNote('Lo actualizan ustedes cuando cambia. Pasa solo al mes siguiente.');
+  sh.getRangeList(['F26', 'E51']).setNote('Mínimo: lo actualizan ustedes cuando cambia. Pasa solo al mes siguiente.');
+  sh.getRange('D54').setNote('Ítem 28 cuando se paga según alícuota. Lo actualizan ustedes cuando cambia; pasa solo al mes siguiente.');
+  sh.getRange('E54').setNote('Ítem 28 cuando se paga el mínimo (monto mínimo de la promoción). Pasa solo al mes siguiente.');
+  sh.getRange('F52').setNote('El 25 % y el 10 % se calculan sobre la contribución de cada columna (el mínimo va sin reducción).');
   reglasEstado_(sh, ['L4:L87', 'I2:L2']);
   var alerta = SpreadsheetApp.newConditionalFormatRule().whenTextStartsWith('⚠')
     .setFontColor('#9c5700').setBold(true).setRanges([sh.getRange('F83'), sh.getRange('G32'), sh.getRange('H59')]).build();
@@ -807,8 +857,8 @@ function repararFormulas() {
   var n = enIngles_(ss, function () { return repararTodo_(ss); });
   mostrarVentasReales_(ss);
   ui.alert('Listo: fórmulas reparadas en Datos, ' + n.meses + ' mes(es), Asientos, Otros asientos y Plan de cuentas.' +
-    (n.movidos ? '\n\n' + n.movidos + ' mes(es) pasaron al orden nuevo (Ventas, Ingresos Brutos, Comercio e ' +
-      'Industria, IVA), con lo cargado en su lugar.' : ''));
+    (n.movidos ? '\n\n' + n.movidos + ' mes(es) se pasaron al formato nuevo de la hoja, con lo cargado en ' +
+      'su lugar. Revisá en Comercio e Industria el mínimo y el ítem 28 de la columna "Mínimo".' : ''));
 }
 
 function repararTodo_(ss) {
@@ -839,24 +889,31 @@ function repararTodo_(ss) {
 // (null si es el primer mes: entonces los saldos anteriores se guardan, porque
 // se cargan a mano). Devuelve true si la hoja era del orden viejo.
 function repararMes_(ss, sh, prev) {
-  var v1 = esV1_(sh);
-  var carga = (v1 ? M_CARGA_V1 : M_CARGA).concat(prev ? [] : (v1 ? M_SALDOS_ANT_V1 : M_SALDOS_ANT));
-  var guardado = carga.map(function (a1) { return [v1 ? aV2_(a1) : a1, sh.getRange(a1).getValues()]; });
+  var vals = sh.getRange(1, 1, M_VREALES[1], 12).getValues();
+  var forms = sh.getRange(1, 1, M_VREALES[1], 12).getFormulas();
+  var ver = versionMes_(vals);
+  var lista = (ver === 1 ? M_CARGA_V1 : ver === 2 ? M_CARGA_V2 : M_CARGA)
+    .concat(prev ? [] : (ver === 1 ? M_SALDOS_ANT_V1 : M_SALDOS_ANT));
+  var guardados = {};
+  lista.forEach(function (rango) {
+    celdas_(rango).forEach(function (a1) {
+      var q = a1rc_(a1);
+      guardados[aActual_(a1, ver)] = vals[q.r - 1][q.c - 1];
+    });
+  });
   // Si en la base de la 1ra actividad o del 1er rubro escribieron un numero
   // en vez de la formula, se respeta.
-  var bases = (v1 ? M_BASES_V1 : M_BASES).map(function (a1, k) {
-    var rg = sh.getRange(a1);
-    return [M_BASES[k], rg.getFormula() ? null : rg.getValue()];
+  (ver === 1 ? M_BASES_V1 : M_BASES).forEach(function (a1, k) {
+    var q = a1rc_(a1), v = vals[q.r - 1][q.c - 1];
+    if (!forms[q.r - 1][q.c - 1] && v !== '') guardados[M_BASES[k]] = v;
   });
   sh.getProtections(SpreadsheetApp.ProtectionType.SHEET).forEach(function (pr) { pr.remove(); });
   sh.setConditionalFormatRules([]);
-  // Colores, notas y celdas unidas se arman de nuevo (si la hoja era del
-  // orden viejo, quedarian en lugares que ya no corresponden).
+  // Colores, notas y celdas unidas se arman de nuevo (si la hoja era de una
+  // version vieja, quedarian en lugares que ya no corresponden).
   sh.getRange(1, 1, M_VREALES[1] + 5, 12).breakApart().clearFormat().clearNote();
-  armarHojaMes_(ss, sh, sh.getName(), prev);
-  guardado.forEach(function (x) { sh.getRange(x[0]).setValues(x[1]); });
-  bases.forEach(function (x) { if (x[1] !== null && x[1] !== '') sh.getRange(x[0]).setValue(x[1]); });
-  return v1;
+  armarHojaMes_(ss, sh, sh.getName(), prev, guardados);
+  return ver < 3;
 }
 
 // ============================================================
