@@ -697,14 +697,14 @@ function armarHojaMes_(ss, sh, nombre, prevSh, guardados) {
 
   // 4. IVA (filas 65 a 87)
   p('B65', '4. IVA');
-  ['Crédito fiscal (compras, ya restadas las notas de crédito)', 'Alícuota', 'Neto', 'IVA'].forEach(function (t, i) {
+  ['Crédito fiscal (compras, ya restadas las notas de crédito)', 'Alícuota', 'Neto', 'IVA', 'Total'].forEach(function (t, i) {
     p(col_(2 + i) + '66', t);
   });
   [['Compras 10,5 %', 0.105], ['Compras 21 %', 0.21], ['Compras 27 %', 0.27]].forEach(function (v, i) {
     var r = 67 + i;
-    p('B' + r, v[0]); p('C' + r, v[1]); p('D' + r, '=E' + r + '/C' + r);
+    p('B' + r, v[0]); p('C' + r, v[1]); p('D' + r, '=E' + r + '/C' + r); p('F' + r, '=D' + r + '+E' + r);
   });
-  p('B70', 'Total compras'); p('D70', '=SUM(D67:D69)'); p('E70', '=SUM(E67:E69)');
+  p('B70', 'Total compras'); p('D70', '=SUM(D67:D69)'); p('E70', '=SUM(E67:E69)'); p('F70', '=SUM(F67:F69)');
   p('B71', 'Crédito SUSS: Remuneración 10 del F.931 (en Neto) × alícuota'); p('C71', 0.0145);
   p('E71', '=ROUND(D71*C71,2)');
   p('B73', 'Liquidación');
@@ -796,14 +796,14 @@ function formatoMes_(ss, sh, primerMes) {
     .setBackground(COLOR.seccion).setFontColor('#ffffff').setFontWeight('bold');
   sh.getRangeList(['I4:L4', 'I65:L65', 'I72:L72', 'I14:L14', 'I39:L39'])
     .setBackground(COLOR.cabecera).setFontWeight('bold');
-  sh.getRangeList(['B5:F5', 'B66:E66', 'B14:F14', 'B39:G39', 'J5:K5', 'J66:K66', 'J73:K73',
+  sh.getRangeList(['B5:F5', 'B66:F66', 'B14:F14', 'B39:G39', 'J5:K5', 'J66:K66', 'J73:K73',
     'J15:K15', 'J40:K40', 'D95:F95', 'B73', 'B50:G50'])
     .setFontWeight('bold').setBackground(COLOR.total);
-  sh.getRangeList(['B11:F11', 'B70:E70', 'B25:F25', 'B28:F28', 'B55:G55', 'B57:G57', 'B78:E78', 'B80:E80', 'H51'])
+  sh.getRangeList(['B11:F11', 'B70:F70', 'B25:F25', 'B28:F28', 'B55:G55', 'B57:G57', 'B78:E78', 'B80:E80', 'H51'])
     .setFontWeight('bold');
   sh.getRangeList(['B79:E79', 'B86:E87', 'B35:F36', 'B62:G63'])
     .setFontWeight('bold').setBackground(COLOR.resultado);
-  sh.getRangeList(['D6:F11', 'D67:E71', 'E74:E87', 'D15:D24', 'F15:F36', 'D40:D49', 'G40:G63', 'D51:E55',
+  sh.getRangeList(['D6:F11', 'D67:E71', 'F67:F70', 'E74:E87', 'D15:D24', 'F15:F36', 'D40:D49', 'G40:G63', 'D51:E55',
     'J6:K9', 'J67:K70', 'J74:K76', 'J16:K17', 'J41:K42', 'E90:E92', 'D96:F98'])
     .setNumberFormat(FMT_PESOS);
   sh.getRangeList(['C6:C9', 'C67:C69', 'E15:E24', 'F40:F49', 'F52:F53', 'E93']).setNumberFormat('0.00%');
