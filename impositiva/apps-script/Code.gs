@@ -24,7 +24,7 @@
 //   - "Exportaciones": que meses se exportaron, cuando y quien.
 //
 // Menu "Impositiva":
-//   - Agregar el mes siguiente.
+//   - Agregar el mes siguiente / Agregar un mes anterior al primero.
 //   - Exportar asientos para Onvio: elige desde/hasta, controla que todo
 //     cierre y guarda el Excel en la carpeta "Asientos para Onvio" (al
 //     lado de la planilla), con el link para bajarlo.
@@ -183,6 +183,7 @@ var ASIENTOS = [
 function onOpen() {
   SpreadsheetApp.getUi().createMenu('Impositiva')
     .addItem('Agregar el mes siguiente', 'agregarMes')
+    .addItem('Agregar un mes anterior al primero', 'agregarMesAnterior')
     .addItem('Exportar asientos para Onvio…', 'abrirExportar')
     .addSeparator()
     .addItem('Ordenar el plan de cuentas (después de pegarlo)', 'ordenarPlan')
@@ -445,6 +446,63 @@ function listarMeses_(ss) {
     return m ? { nombre: s.getName(), hoja: s, orden: +m[2] * 12 + (+m[1] - 1) } : null;
   }).filter(function (x) { return x && +x.nombre.slice(0, 2) >= 1 && +x.nombre.slice(0, 2) <= 12; })
     .sort(function (a, b) { return a.orden - b.orden; });
+}
+
+function mesAnterior_(nombre) {
+  var m = +nombre.slice(0, 2), a = +nombre.slice(3);
+  m--;
+  if (m < 1) { m = 12; a--; }
+  return (m < 10 ? '0' : '') + m + '-' + a;
+}
+
+// Agrega el mes anterior al primero (ej. empezaron en 10-2026 y quieren
+// cargar 09-2026). El nuevo pasa a ser el primer mes (saldos anteriores a
+// mano); el que era primero deja de tener los saldos a mano y los toma del
+// nuevo.
+function agregarMesAnterior() {
+  var ss = SpreadsheetApp.getActive();
+  var ui = SpreadsheetApp.getUi();
+  asegurarHojas_(ss);
+  var meses = listarMeses_(ss);
+  if (!meses.length) {
+    agregarMes();
+    return;
+  }
+  var primero = meses[0];
+  var nombre = mesAnterior_(primero.nombre);
+  if (ss.getSheetByName(nombre)) {
+    ui.alert('La hoja ' + nombre + ' ya existe.');
+    return;
+  }
+  var v1 = esV1_(primero.hoja);
+  var nombres = ['Saldo técnico de IVA', 'Libre disponibilidad de IVA', 'Saldo a favor de IIBB',
+    'Saldo a favor de Comercio e Industria'];
+  var lista = (v1 ? M_SALDOS_ANT_V1 : M_SALDOS_ANT).map(function (a1, k) {
+    var x = Number(primero.hoja.getRange(a1).getValue()) || 0;
+    return '- ' + nombres[k] + ': ' + x.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }).join('\n');
+  var r = ui.alert('Agregar ' + nombre,
+    'Se agrega la hoja ' + nombre + ' antes de ' + primero.nombre + '. Pasa a ser el primer mes: ahí se cargan ' +
+    'a mano los saldos que vienen de la DDJJ anterior. Arranca con las alícuotas, mínimos y fijos de ' +
+    primero.nombre + '.\n\n' + primero.nombre + ' deja de tener a mano los saldos del mes anterior y pasa a ' +
+    'tomarlos de ' + nombre + '. Hoy tiene cargados:\n' + lista + '\n\nLo demás de ' + primero.nombre +
+    ' no cambia. ¿Seguimos?', ui.ButtonSet.OK_CANCEL);
+  if (r !== ui.Button.OK) return;
+  var sh = enIngles_(ss, function () {
+    if (v1) repararMes_(ss, primero.hoja, null);
+    var nueva = ss.insertSheet(nombre, primero.hoja.getIndex() - 1);
+    armarHojaMes_(ss, nueva, nombre, null);
+    M_PARAMETROS.forEach(function (a1) {
+      nueva.getRange(a1).setValues(primero.hoja.getRange(a1).getValues());
+    });
+    repararMes_(ss, primero.hoja, nueva);
+    rearmarAsientos_(ss);
+    return nueva;
+  });
+  mostrarVentasReales_(ss);
+  ss.setActiveSheet(sh);
+  ss.toast('Listo el mes ' + nombre + '. Cargá ahí los saldos de la DDJJ anterior; ' + primero.nombre +
+    ' ya los toma de ' + nombre + '.', 'Impositiva', 8);
 }
 
 function mesSiguiente_(nombre) {
@@ -771,29 +829,34 @@ function repararTodo_(ss) {
   var meses = listarMeses_(ss);
   var movidos = 0;
   meses.forEach(function (m, i) {
-    var sh = m.hoja;
-    var prev = i > 0 ? meses[i - 1].hoja : null;
-    var v1 = esV1_(sh);
-    if (v1) movidos++;
-    var carga = (v1 ? M_CARGA_V1 : M_CARGA).concat(prev ? [] : (v1 ? M_SALDOS_ANT_V1 : M_SALDOS_ANT));
-    var guardado = carga.map(function (a1) { return [v1 ? aV2_(a1) : a1, sh.getRange(a1).getValues()]; });
-    // Si en la base de la 1ra actividad o del 1er rubro escribieron un numero
-    // en vez de la formula, se respeta.
-    var bases = (v1 ? M_BASES_V1 : M_BASES).map(function (a1, k) {
-      var rg = sh.getRange(a1);
-      return [M_BASES[k], rg.getFormula() ? null : rg.getValue()];
-    });
-    sh.getProtections(SpreadsheetApp.ProtectionType.SHEET).forEach(function (pr) { pr.remove(); });
-    sh.setConditionalFormatRules([]);
-    // Colores, notas y celdas unidas se arman de nuevo (si la hoja era del
-    // orden viejo, quedarian en lugares que ya no corresponden).
-    sh.getRange(1, 1, M_VREALES[1] + 5, 12).breakApart().clearFormat().clearNote();
-    armarHojaMes_(ss, sh, m.nombre, prev);
-    guardado.forEach(function (x) { sh.getRange(x[0]).setValues(x[1]); });
-    bases.forEach(function (x) { if (x[1] !== null && x[1] !== '') sh.getRange(x[0]).setValue(x[1]); });
+    if (repararMes_(ss, m.hoja, i > 0 ? meses[i - 1].hoja : null)) movidos++;
   });
   rearmarAsientos_(ss);
   return { meses: meses.length, movidos: movidos };
+}
+
+// Rearma la hoja de un mes guardando lo cargado. prev = hoja del mes anterior
+// (null si es el primer mes: entonces los saldos anteriores se guardan, porque
+// se cargan a mano). Devuelve true si la hoja era del orden viejo.
+function repararMes_(ss, sh, prev) {
+  var v1 = esV1_(sh);
+  var carga = (v1 ? M_CARGA_V1 : M_CARGA).concat(prev ? [] : (v1 ? M_SALDOS_ANT_V1 : M_SALDOS_ANT));
+  var guardado = carga.map(function (a1) { return [v1 ? aV2_(a1) : a1, sh.getRange(a1).getValues()]; });
+  // Si en la base de la 1ra actividad o del 1er rubro escribieron un numero
+  // en vez de la formula, se respeta.
+  var bases = (v1 ? M_BASES_V1 : M_BASES).map(function (a1, k) {
+    var rg = sh.getRange(a1);
+    return [M_BASES[k], rg.getFormula() ? null : rg.getValue()];
+  });
+  sh.getProtections(SpreadsheetApp.ProtectionType.SHEET).forEach(function (pr) { pr.remove(); });
+  sh.setConditionalFormatRules([]);
+  // Colores, notas y celdas unidas se arman de nuevo (si la hoja era del
+  // orden viejo, quedarian en lugares que ya no corresponden).
+  sh.getRange(1, 1, M_VREALES[1] + 5, 12).breakApart().clearFormat().clearNote();
+  armarHojaMes_(ss, sh, sh.getName(), prev);
+  guardado.forEach(function (x) { sh.getRange(x[0]).setValues(x[1]); });
+  bases.forEach(function (x) { if (x[1] !== null && x[1] !== '') sh.getRange(x[0]).setValue(x[1]); });
+  return v1;
 }
 
 // ============================================================

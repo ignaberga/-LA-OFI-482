@@ -317,6 +317,13 @@ quiere armar.
   Todo lo determinado va a la cuenta de gasto; lo que queda a pagar, pasivo.
 - Alícuotas, mínimos, % y fijos están en cada mes y pasan al siguiente al
   crearlo (así cambiar uno no toca los meses viejos).
+- Menú **"Agregar un mes anterior al primero"** (`agregarMesAnterior`):
+  para cargar meses de antes del primero (Ignacio empezó en 10-2026 y
+  quiso sumar 09-2026). El nuevo pasa a ser el primer mes (saldos
+  anteriores a mano) y arranca con los parámetros del que era primero;
+  ese deja de tener los saldos a mano y los toma del nuevo (pide
+  confirmación mostrando los saldos que tenía cargados; lo demás no se
+  toca, `repararMes_`).
 - Saldo a favor del mes anterior: aparece un aviso "¿Se compensó?"; lo
   compensado se pone en el mes (fila "Compensado") y el asiento de la
   compensación en Otros asientos.
