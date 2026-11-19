@@ -324,8 +324,16 @@ quiere armar.
   (`migrarDatos_` saca ese renglón de Datos viejos y sube la cuenta de "a
   pagar").
   Todo lo determinado va a la cuenta de gasto; lo que queda a pagar, pasivo.
-- Alícuotas, mínimos, % y fijos están en cada mes y pasan al siguiente al
-  crearlo (así cambiar uno no toca los meses viejos).
+- Alícuotas, mínimos, % y fijos (`M_PARAMETROS`) **siguen al mes anterior
+  con fórmula** (`='09-2026'!E15`) en todos los meses salvo el primero: si
+  se escribe otro número en un mes, vale desde ese mes en adelante y los
+  anteriores no cambian (pedido de Ignacio 11/2026: había cargado las
+  alícuotas en septiembre después de crear octubre y no le llegaban). Antes
+  se copiaban una sola vez al crear el mes. Al reparar (`repararMeses_`,
+  lleva los vigentes en `efectivos`), un parámetro vacío, con fórmula o
+  igual al del mes anterior pasa a seguirlo; uno distinto queda escrito. Al
+  agregar un mes anterior al primero, el que era primero conserva lo que
+  tenía escrito y solo sigue al nuevo en lo vacío (`conservar`).
 - Menú **"Agregar un mes anterior al primero"** (`agregarMesAnterior`):
   para cargar meses de antes del primero (Ignacio empezó en 10-2026 y
   quiso sumar 09-2026). El nuevo pasa a ser el primer mes (saldos
@@ -361,10 +369,13 @@ quiere armar.
   del código que cambie fórmulas. Reconoce las versiones viejas de la hoja
   del mes (`versionMes_`: 1 = IVA en la fila 13; 2 = CEI con un solo
   mínimo en G51 e ítem 28 en G55; 3 = CEI con saldo a favor en G59–G63;
-  4 = la actual, `VERSION_MES`) y pasa lo cargado a su lugar nuevo
+  4 = parámetros copiados como números; 5 = la actual, `VERSION_MES`,
+  marcada con un dato oculto de la hoja `impositiva_version` porque las
+  celdas no se mueven) y pasa lo cargado a su lugar nuevo
   (`M_CARGA_V1/V2/V3` → `aActual_`; lo que ya no existe se descarta). Si se vuelve a
   mover una celda cargable, agregar una versión igual. "Agregar el mes
-  siguiente" actualiza solo el mes anterior si es de una versión vieja.
+  siguiente" y "Agregar un mes anterior" reparan antes todos los meses si
+  alguno es de una versión vieja.
 - Pendiente para más adelante: Convenio Multilateral (2 o 3 empresas);
   código en una biblioteca de Apps Script para no pegarlo en cada planilla.
 - Probado con un simulador de Sheets + LibreOffice con los números de Panda

@@ -119,8 +119,10 @@ var CUENTAS = [
 // Ventas reales: 89-98.
 var M_SALDOS_ANT = ['E77', 'E83', 'F32'];  // vienen del mes anterior (IVA tecnico, IVA libre disp., IIBB)
 var M_SALDOS_DE = ['E79', 'E87', 'F36'];   // lo que pasa al siguiente
-var VERSION_MES = 4;                        // version actual de la hoja del mes (ver versionMes_)
-// Lo que pasa al mes siguiente tal cual (se puede cambiar en cada mes).
+var VERSION_MES = 5;                        // version actual de la hoja del mes (ver versionMes_)
+// Alicuotas, minimos, fijos y %: en cada mes (salvo el primero) siguen al
+// mes anterior con una formula. Si en un mes se escribe otro numero, vale
+// desde ese mes en adelante (los anteriores no cambian).
 var M_PARAMETROS = ['C71', 'E15:E24', 'F26', 'E40:F49', 'E51', 'F52:F53', 'D54:E54'];
 var M_CARGA = ['E6:E9', 'D10', 'J6:K7', 'E67:E69', 'C71:D71', 'E81:E82', 'E84',
   'J67:K68', 'J74:J76', 'D16:D24', 'E15:E24', 'F26:F27', 'F29:F31', 'F33',
@@ -152,12 +154,25 @@ var M_CARGA_V1 = ['E6:E9', 'D10', 'J6:K7', 'E15:E17', 'C19:D19', 'E29:E30', 'E32
   'J65:J66', 'E90'];
 var M_SALDOS_ANT_V1 = ['E25', 'E31', 'F56', 'G83'];
 var M_BASES_V1 = ['D39', 'D64'];
-// vals: valores de A1:L98 de la hoja del mes.
-function versionMes_(vals) {
+// vals: valores de A1:L98 de la hoja del mes. Version 5: igual que la 4,
+// pero los parametros siguen al mes anterior con formula (se marca en la
+// hoja con un dato oculto, porque las celdas estan en el mismo lugar).
+function versionMes_(vals, sh) {
   if (/^2\. IVA/.test(String(vals[12][1]))) return 1;
   if (String(vals[49][3]) !== 'Según alícuota') return 2;
   if (/^Saldo a favor/.test(String(vals[58][1]))) return 3;
-  return 4;
+  return marcaVersion_(sh) >= 5 ? 5 : 4;
+}
+function marcaVersion_(sh) {
+  var m = sh.getDeveloperMetadata().filter(function (x) { return x.getKey() === 'impositiva_version'; });
+  return m.length ? Number(m[0].getValue()) : 0;
+}
+function marcarVersion_(sh) {
+  sh.getDeveloperMetadata().forEach(function (x) { if (x.getKey() === 'impositiva_version') x.remove(); });
+  sh.addDeveloperMetadata('impositiva_version', String(VERSION_MES));
+}
+function versionDe_(sh) {
+  return versionMes_(sh.getRange(1, 1, M_VREALES[1], 12).getValues(), sh);
 }
 // Celda de la version 3 -> version 4 (null = ya no existe).
 function aV4_(a1) {
@@ -516,7 +531,7 @@ function agregarMesAnterior() {
     ui.alert('La hoja ' + nombre + ' ya existe.');
     return;
   }
-  var ver = versionMes_(primero.hoja.getRange(1, 1, M_VREALES[1], 12).getValues());
+  var ver = versionDe_(primero.hoja);
   var nombres = ['Saldo técnico de IVA', 'Libre disponibilidad de IVA', 'Saldo a favor de IIBB'];
   var viejos = ver === 1 ? M_SALDOS_ANT_V1 : ver <= 3 ? M_SALDOS_ANT_V3 : M_SALDOS_ANT;
   var lista = viejos.slice(0, 3).map(function (a1, k) {
@@ -531,13 +546,16 @@ function agregarMesAnterior() {
     ' no cambia. ¿Seguimos?', ui.ButtonSet.OK_CANCEL);
   if (r !== ui.Button.OK) return;
   var sh = enIngles_(ss, function () {
-    if (ver < VERSION_MES) repararMes_(ss, primero.hoja, null);
+    if (hayMesesViejos_(ss)) repararMeses_(ss);
     var nueva = ss.insertSheet(nombre, primero.hoja.getIndex() - 1);
     armarHojaMes_(ss, nueva, nombre, null);
+    // El nuevo primer mes arranca con los parametros del que era primero.
+    // Ese conserva lo que tenia escrito; lo que tenia vacio pasa a seguir al
+    // nuevo.
     M_PARAMETROS.forEach(function (a1) {
       nueva.getRange(a1).setValues(primero.hoja.getRange(a1).getValues());
     });
-    repararMes_(ss, primero.hoja, nueva);
+    repararMes_(ss, primero.hoja, nueva, {}, true);
     rearmarAsientos_(ss);
     return nueva;
   });
@@ -582,9 +600,9 @@ function agregarMes() {
   var sh = enIngles_(ss, function () {
     // Si el mes anterior es de una version vieja de la hoja, primero se
     // actualiza (si no, los parametros que pasan quedarian corridos).
-    if (prev && versionMes_(prev.hoja.getRange(1, 1, M_VREALES[1], 12).getValues()) < VERSION_MES) {
-      repararMes_(ss, prev.hoja, meses.length > 1 ? meses[meses.length - 2].hoja : null);
-    }
+    // Si hay meses de una version vieja de la hoja, primero se actualizan
+    // (si no, los parametros que siguen al mes anterior quedarian corridos).
+    if (hayMesesViejos_(ss)) repararMeses_(ss);
     var nueva = ss.insertSheet(nombre, pos);
     armarHojaMes_(ss, nueva, nombre, prev ? prev.hoja : null);
     rearmarAsientos_(ss);
@@ -774,14 +792,15 @@ function armarHojaMes_(ss, sh, nombre, prevSh, guardados) {
   };
   g[0][8] = '=IF(' + ini + '="","","Ejercicio del "&' + fecha(desde) + '&" al "&' + fecha(hasta) + ')';
 
-  if (guardados) Object.keys(guardados).forEach(function (a1) { p(a1, guardados[a1]); });
-  sh.getRange(1, 1, g.length, g[0].length).setValues(g);
-  if (prevSh && !guardados) {
-    M_PARAMETROS.forEach(function (a1) {
-      sh.getRange(a1).setValues(prevSh.getRange(a1).getValues());
+  if (prevSh) {
+    M_PARAMETROS.forEach(function (rango) {
+      celdas_(rango).forEach(function (a1) { p(a1, '=' + pn + a1); });
     });
   }
+  if (guardados) Object.keys(guardados).forEach(function (a1) { p(a1, guardados[a1]); });
+  sh.getRange(1, 1, g.length, g[0].length).setValues(g);
   formatoMes_(ss, sh, !prevSh);
+  marcarVersion_(sh);
 }
 
 function ctlDDJJ_(p, r, texto, celda) {
@@ -815,9 +834,11 @@ function formatoMes_(ss, sh, primerMes) {
   sh.getRangeList(['D6:F11', 'D67:E71', 'F67:F70', 'E74:E87', 'D15:D24', 'F15:F36', 'D40:D49', 'G40:G59', 'D51:E55',
     'J6:K9', 'J67:K70', 'J74:K76', 'J16:K17', 'J41:K42', 'E90:E92', 'D96:F98'])
     .setNumberFormat(FMT_PESOS);
-  sh.getRangeList(['C6:C9', 'C67:C69', 'E15:E24', 'F40:F49', 'F52:F53', 'E93']).setNumberFormat('0.00%');
+  sh.getRangeList(['C6:C9', 'C67:C69', 'F52:F53', 'E93']).setNumberFormat('0.00%');
+  // Alicuotas y reduccion: el 0 no se muestra (las que siguen a un mes vacio)
+  sh.getRangeList(['E15:E24', 'F40:F49']).setNumberFormat('0.00%;-0.00%;""');
   sh.getRange('C71').setNumberFormat('0.00%');
-  sh.getRange('E40:E49').setNumberFormat('0.00');
+  sh.getRange('E40:E49').setNumberFormat('0.00;-0.00;""');
   var carga = M_CARGA.slice();
   if (primerMes) carga = carga.concat(M_SALDOS_ANT);
   sh.getRangeList(carga).setBackground(COLOR.carga);
@@ -886,29 +907,58 @@ function repararTodo_(ss) {
   otros.getRange(2, 5, N_OTROS, 1).setFormulas(fo.map(function (f) { return [f[0]]; }));
   otros.getRange(2, 9, N_OTROS, 2).setFormulas(fo.map(function (f) { return [f[1], f[2]]; }));
   // Meses: se guarda lo cargado, se rearma la hoja y se vuelve a poner.
-  var meses = listarMeses_(ss);
-  var movidos = 0;
-  meses.forEach(function (m, i) {
-    if (repararMes_(ss, m.hoja, i > 0 ? meses[i - 1].hoja : null)) movidos++;
-  });
+  var r = repararMeses_(ss);
   rearmarAsientos_(ss);
+  return r;
+}
+
+// Repara todos los meses en orden, llevando los parametros vigentes
+// (efectivos) para saber cuales de cada mes son propios y cuales siguen al
+// anterior.
+function repararMeses_(ss) {
+  var meses = listarMeses_(ss);
+  var movidos = 0, efectivos = {};
+  meses.forEach(function (m, i) {
+    if (repararMes_(ss, m.hoja, i > 0 ? meses[i - 1].hoja : null, efectivos)) movidos++;
+  });
   return { meses: meses.length, movidos: movidos };
+}
+
+function hayMesesViejos_(ss) {
+  return listarMeses_(ss).some(function (m) { return versionDe_(m.hoja) < VERSION_MES; });
 }
 
 // Rearma la hoja de un mes guardando lo cargado. prev = hoja del mes anterior
 // (null si es el primer mes: entonces los saldos anteriores se guardan, porque
-// se cargan a mano). Devuelve true si la hoja era del orden viejo.
-function repararMes_(ss, sh, prev) {
+// se cargan a mano). efectivos = {celda: valor} de los parametros vigentes en
+// el mes anterior (se actualiza con los de este mes): un parametro vacio, con
+// formula o igual al vigente pasa a seguir al mes anterior; uno distinto
+// queda escrito en este mes. Con conservar = true (el que era primer mes al
+// agregar uno anterior) solo pasan a seguir al anterior los vacios: lo que
+// estaba escrito en ese mes se respeta aunque sea igual.
+// Devuelve true si la hoja era de una version vieja.
+function repararMes_(ss, sh, prev, efectivos, conservar) {
+  efectivos = efectivos || {};
   var vals = sh.getRange(1, 1, M_VREALES[1], 12).getValues();
   var forms = sh.getRange(1, 1, M_VREALES[1], 12).getFormulas();
-  var ver = versionMes_(vals);
+  var ver = versionMes_(vals, sh);
+  var esParam = {};
+  M_PARAMETROS.forEach(function (rango) { celdas_(rango).forEach(function (a1) { esParam[a1] = true; }); });
   var lista = (ver === 1 ? M_CARGA_V1 : ver === 2 ? M_CARGA_V2 : ver === 3 ? M_CARGA_V3 : M_CARGA)
     .concat(prev ? [] : (ver === 1 ? M_SALDOS_ANT_V1 : ver <= 3 ? M_SALDOS_ANT_V3 : M_SALDOS_ANT));
   var guardados = {};
   lista.forEach(function (rango) {
     celdas_(rango).forEach(function (a1) {
       var q = a1rc_(a1), dest = aActual_(a1, ver);
-      if (dest) guardados[dest] = vals[q.r - 1][q.c - 1];
+      if (!dest) return;
+      var v = vals[q.r - 1][q.c - 1];
+      if (esParam[dest] && prev) {
+        var sigue = forms[q.r - 1][q.c - 1] || v === '' ||
+          (!conservar && dest in efectivos && v === efectivos[dest]);
+        if (sigue) return;
+      }
+      guardados[dest] = v;
+      if (esParam[dest]) efectivos[dest] = v;
     });
   });
   // Si en la base de la 1ra actividad o del 1er rubro escribieron un numero
