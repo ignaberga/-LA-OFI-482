@@ -241,6 +241,25 @@ quiere armar.
   escribe Conteos sin Código: ningún celular puede seguir usándolo.
 - Compras repetidas: se dejan todas (decisión de Ignacio, 11/2026); solo
   no se repiten renglones idénticos.
+- **Hoja Maestro y sin precios (pedido de Noel, 25/11/2026):** el precio
+  no importa por ahora: la app ya no muestra precios ni totales (ni
+  "Productos sin precio" en Config); en la hoja Pedidos, Precio y Subtotal
+  quedan vacíos (las columnas siguen, para no correr nada ni perder lo
+  viejo); el "Resumen de pedidos" queda Proveedor | Producto | Unidad |
+  bares | Total, con un renglón en blanco entre proveedores. **Ya no se
+  cargan compras** (se sacaron del menú "Cargar compras" y "Recalcular
+  precios"; el código y las hojas viejas quedan). Hoja **Maestro** en la
+  central: Código | Producto | Familia (del Catálogo) | Proveedor, un
+  renglón por producto de todos los catálogos (código + nombre; el mismo
+  proveedor para todos los bares), **un solo proveedor** por producto. La
+  completan Ignacio y Noel a mano (lista desplegable con los proveedores
+  conocidos; vacío = amarillo). Menú "Stock bares → Armar / completar
+  Maestro" (`armarMaestro`): agrega los productos que falten y llena los
+  proveedores vacíos con las compras ya cargadas, nunca pisa lo escrito.
+  Para los pedidos manda el Maestro (por código y nombre, si no por
+  nombre); si el producto no está, el de la última compra; si no, "Sin
+  proveedor". Los "Otros (de las compras)" siguen. La pestaña Inicio de
+  la app se llama **Stock**.
 - **Velocidad (17/10/2026, pedido de Ignacio):**
   - Planilla central: memoria rápida de Google (CacheService) para
     Personas y Bares (10 min) y los precios de cada bar (6 h, clave con la

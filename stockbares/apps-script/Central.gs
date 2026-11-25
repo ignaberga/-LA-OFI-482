@@ -14,6 +14,12 @@
 //     Encargado) | Bares ("Todos" o el nombre del bar; varios separados
 //     por coma) | Clave | Link de instalacion. La Clave y el Link los arma
 //     el menu "Stock bares > Armar links de instalacion".
+//   - "Maestro" (desde noviembre 2026): Codigo | Producto | Familia |
+//     Proveedor, un renglon por producto. De ahi sale el proveedor de los
+//     pedidos. Se completa a mano; el menu "Armar / completar Maestro"
+//     agrega los productos nuevos de los catalogos. Ya no se cargan
+//     compras ni se usan precios: las hojas de compras de abajo quedan de
+//     antes (sirven para los "Otros (de las compras)" de los pedidos).
 //   - "Compras <Bar>" (una por bar, ej. "Compras Archie"): se pega el
 //     detalle de compras de Cuccina de ese bar, tal cual sale. Se usan las
 //     columnas Fecha Documento, Razon Social (proveedor), Descripcion y
@@ -212,7 +218,7 @@ function onEdit(e) {
   try {
     const n = e && e.range ? e.range.getSheet().getName() : "";
     if (n === SHEET_PERSONAS || n === SHEET_BARES) cacheBorrar_(["pb"]);
-    if (n === SHEET_EQUIV || n === SHEET_PRECIOS || /^(compras|proveedores)\b/i.test(n)) nuevaVersionPrecios_();
+    if (n === SHEET_EQUIV || n === SHEET_PRECIOS || n === SHEET_MAESTRO || /^(compras|proveedores)\b/i.test(n)) nuevaVersionPrecios_();
     if (n === SHEET_PEDIDOS || (n === SHEET_RESUMEN_PED && e.range.getRow() <= 2)) resumirPedidos_();
   } catch (err) {}
 }
@@ -511,6 +517,97 @@ function leerPrecios_() {
   });
 }
 
+// ------------------------------------------------------------
+// Hoja "Maestro" (noviembre 2026): Codigo | Producto | Familia | Proveedor.
+// Un renglon por producto de los catalogos de todos los bares, con UN
+// proveedor (el mismo para todos los bares). La completan Ignacio y Noel a
+// mano; el menu "Armar / completar Maestro" agrega los productos que falten
+// y llena los proveedores vacios con las compras que ya estaban cargadas,
+// sin pisar nada de lo escrito. Lo que queda sin proveedor se ve amarillo.
+// Para los pedidos, el proveedor del Maestro manda; si un producto no esta
+// en el Maestro, se usa el de la ultima compra.
+// ------------------------------------------------------------
+const SHEET_MAESTRO = "Maestro";
+const MAESTRO_HEADERS = ["Código", "Producto", "Familia", "Proveedor"];
+function claveMaestro_(codigo, nombre) { return String(codigo === null || codigo === undefined ? "" : codigo).trim() + "|" + norm_(nombre); }
+
+function hojaMaestro_() {
+  const sh = central_().getSheetByName(SHEET_MAESTRO);
+  if (sh) return sh;
+  const nueva = hojaCentral_(SHEET_MAESTRO, MAESTRO_HEADERS);
+  nueva.setFrozenRows(1);
+  return nueva;
+}
+
+// { porClave: {codigo|nombre: proveedor}, porNombre: {nombre: proveedor} }
+let MAESTRO_ = null;
+function leerMaestro_() {
+  if (MAESTRO_) return MAESTRO_;
+  const m = MAESTRO_ = { porClave: {}, porNombre: {} };
+  filasCentral_(SHEET_MAESTRO).forEach(function (r) {
+    const prov = String(r[3] || "").trim();
+    if (!String(r[1] || "").trim() || !prov) return;
+    m.porClave[claveMaestro_(r[0], r[1])] = prov;
+    if (!(norm_(r[1]) in m.porNombre)) m.porNombre[norm_(r[1])] = prov;
+  });
+  return m;
+}
+// Primero por codigo y nombre; si no esta, por el nombre solo.
+function proveedorMaestro_(m, codigo, nombre) {
+  return m.porClave[claveMaestro_(codigo, nombre)] || m.porNombre[norm_(nombre)] || "";
+}
+
+function armarMaestro() {
+  const sh = hojaMaestro_();
+  const data = sh.getDataRange().getValues();
+  const filas = data.length > 1 ? data.slice(1).map(function (r) { return r.slice(0, 4); }) : [];
+  const donde = {};
+  filas.forEach(function (r, i) { if (String(r[1]).trim()) donde[claveMaestro_(r[0], r[1])] = i; });
+  const antes = filas.length;
+  let completados = 0;
+  const provConocidos = {};
+  leerBares_().forEach(function (b) {
+    try { SS = SpreadsheetApp.openById(b.id); } catch (e) { return; }
+    CATALOGO_ = null;
+    const catalogo = readCatalogo_();
+    const pr = calcularPreciosBar_(b.nombre, catalogo, true).precios;
+    catalogo.forEach(function (p) {
+      const prov = ((pr[p.nombre] || {}).proveedores || []).filter(function (v) { return v && v !== "Sin proveedor"; })[0] || "";
+      const k = claveMaestro_(p.codigo, p.nombre);
+      if (k in donde) {
+        const r = filas[donde[k]];
+        if (!String(r[3]).trim() && prov) { r[3] = prov; completados++; }
+      } else {
+        donde[k] = filas.length;
+        filas.push([p.codigo, p.nombre, p.familia, prov]);
+      }
+    });
+  });
+  SS = null; CATALOGO_ = null;
+  if (filas.length) {
+    lugar_(sh, filas.length + 1, MAESTRO_HEADERS.length);
+    sh.getRange(2, 1, filas.length, MAESTRO_HEADERS.length).setValues(filas);
+  }
+  // Lista de proveedores para elegir (se puede escribir uno nuevo igual).
+  leerPrecios_().forEach(function (p) { if (p.proveedor && p.proveedor !== "Sin proveedor") provConocidos[p.proveedor] = true; });
+  filas.forEach(function (r) { if (String(r[3]).trim()) provConocidos[String(r[3]).trim()] = true; });
+  const lista = Object.keys(provConocidos).sort(function (a, b) { return a.localeCompare(b); }).slice(0, 500);
+  const n = Math.max(sh.getMaxRows() - 1, 1);
+  if (lista.length) {
+    sh.getRange(2, 4, n, 1).setDataValidation(SpreadsheetApp.newDataValidation()
+      .requireValueInList(lista, true).setAllowInvalid(true).build());
+  }
+  sh.setConditionalFormatRules([SpreadsheetApp.newConditionalFormatRule()
+    .whenFormulaSatisfied('=AND($B2<>"",$D2="")').setBackground("#FFF2CC")
+    .setRanges([sh.getRange(2, 1, n, MAESTRO_HEADERS.length)]).build()]);
+  MAESTRO_ = null;
+  nuevaVersionPrecios_();
+  const faltan = filas.filter(function (r) { return String(r[1]).trim() && !String(r[3]).trim(); }).length;
+  SpreadsheetApp.getUi().alert("Listo.\n\n" + (filas.length - antes) + " productos nuevos en el Maestro.\n" +
+    completados + " proveedores completados con las compras.\n" + faltan + " productos siguen sin proveedor (en amarillo): " +
+    "completalos a mano en la columna Proveedor.");
+}
+
 function recalcularPrecios() {
   const n = reconstruirPrecios_();
   SpreadsheetApp.getUi().alert("Listo: " + n + " precios en la hoja «Precios».");
@@ -588,7 +685,8 @@ function unidadDeMedida_(m) {
 // bar: los codigos son de ese Cuccina) y si no, por nombre o por
 // Equivalencias. Ademas, para los pedidos: las bebidas que compro el bar y
 // no estan en su catalogo ("extras").
-function calcularPreciosBar_(barNombre, catalogo) {
+function calcularPreciosBar_(barNombre, catalogo, sinMaestro) {
+  const maestro = sinMaestro ? null : leerMaestro_();
   const eq = leerEquivalencias_();
   const nb = norm_(barNombre);
   const porNom = {}, porCod = {}, suyas = {};
@@ -608,6 +706,9 @@ function calcularPreciosBar_(barNombre, catalogo) {
     let hits = ((prod.codigo && porCod[prod.codigo]) || porNom[norm_(prod.nombre)] || []).slice()
       .sort(function (a, b) { return b.fecha - a.fecha; });
     hits.forEach(function (h) { usados[h.i] = true; });
+    // El proveedor de la hoja Maestro manda (uno solo por producto).
+    const pm = maestro && proveedorMaestro_(maestro, prod.codigo, prod.nombre);
+    if (pm) { out[prod.nombre] = { costo: null, proveedores: [pm], porProveedor: {} }; return; }
     // De las compras se toman solo bebidas: lo de Cocina no lleva precio.
     if (prod.categoria !== "Barra") { out[prod.nombre] = { costo: null, proveedores: [], porProveedor: {} }; return; }
     // Si hay compras con proveedor, no se mezclan las que no lo traen.
@@ -619,7 +720,9 @@ function calcularPreciosBar_(barNombre, catalogo) {
       const v = h.proveedor || "Sin proveedor";
       if (provs.indexOf(v) < 0) { provs.push(v); porProveedor[v] = precioPorUnidad_(h, prod); }
     });
-    out[prod.nombre] = { costo: provs.length ? porProveedor[provs[0]] : null, proveedores: provs, porProveedor: porProveedor };
+    // Un solo proveedor por producto (decision de noviembre 2026): el de la
+    // ultima compra.
+    out[prod.nombre] = { costo: provs.length ? porProveedor[provs[0]] : null, proveedores: provs.slice(0, 1), porProveedor: porProveedor };
   });
   // Extras: lo que compro este bar, es bebida y no esta en el catalogo.
   const provBebida = proveedoresDeBebida_();
@@ -644,8 +747,9 @@ function calcularPreciosBar_(barNombre, catalogo) {
     const prod = m && /^lit/.test(norm_(l[0].medida)) ? { unidad: "Botellas", contenido: m[1].replace(",", ".") + " " + m[2].toLowerCase().replace(/^lts?$/, "l") } : null;
     const porProveedor = {}, provs = [];
     l.forEach(function (h) { if (provs.indexOf(h.proveedor) < 0) { provs.push(h.proveedor); porProveedor[h.proveedor] = prod ? precioPorUnidad_(h, prod) : h.precio; } });
+    const pm = maestro && proveedorMaestro_(maestro, l[0].codigo, l[0].nombre);
     return { nombre: l[0].nombre, codigo: l[0].codigo || "", unidad: prod ? prod.unidad : unidadDeMedida_(l[0].medida), contenido: prod ? prod.contenido : "",
-      costo: porProveedor[provs[0]], proveedores: provs, porProveedor: porProveedor };
+      costo: porProveedor[provs[0]], proveedores: [pm || provs[0]], porProveedor: porProveedor };
   }).sort(function (a, b) { return a.nombre.localeCompare(b.nombre); });
   return { precios: out, extras: extras };
 }
@@ -657,7 +761,7 @@ function preciosDelCatalogo_(barNombre, catalogo) { return calcularPreciosBar_(b
 function preciosDelBar_(bar, catalogo, conNuevos) {
   const huella = Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5,
     JSON.stringify(catalogo.map(function (p) { return [p.nombre, p.codigo, p.unidad, p.contenido, p.familia]; })), Utilities.Charset.UTF_8));
-  const k = "pr2|" + versionPrecios_() + "|" + huella + "|" + norm_(bar.nombre).slice(0, 60);
+  const k = "pr3|" + versionPrecios_() + "|" + huella + "|" + norm_(bar.nombre).slice(0, 60);
   let v = cacheGet_(k);
   if (!v || !v.precios || !Array.isArray(v.extras) || (conNuevos && !Array.isArray(v.nuevos))) {
     const c = calcularPreciosBar_(bar.nombre, catalogo);
@@ -721,8 +825,7 @@ function onOpen() {
   if (!central_().getSheetByName(SHEET_RESUMEN_PED)) resumirPedidos_();
   SpreadsheetApp.getUi().createMenu("Stock bares")
     .addItem("Armar links de instalación", "armarLinks")
-    .addItem("Cargar compras (Excel de Cuccina)", "cargarComprasVentana")
-    .addItem("Recalcular precios", "recalcularPrecios")
+    .addItem("Armar / completar Maestro", "armarMaestro")
     .addItem("Cambiar la dirección del código", "cambiarDireccion")
     .addToUi();
 }
@@ -1240,8 +1343,8 @@ function hojaPedidosCentral_() {
 }
 
 // Hoja "Resumen de pedidos": Noel pone Desde y Hasta (B1 y B2) y se arma
-// sola, por proveedor y producto, con una columna por bar, el total y la
-// plata estimada. No cuenta los Cancelados. Se rearma al cambiar las
+// sola, por proveedor y producto, con una columna por bar y el total (sin
+// precios desde noviembre 2026). No cuenta los Cancelados. Se rearma al cambiar las
 // fechas, al cambiar algo en la hoja Pedidos y con cada pedido de la app.
 const SHEET_RESUMEN_PED = "Resumen de pedidos";
 const RESPED_FILA = 5;
@@ -1287,37 +1390,35 @@ function resumirPedidos_() {
     const prov = String(r[4] || "").trim() || "Sin proveedor", prod = String(r[5]).trim(), bar = String(r[1]).trim();
     usados[bar] = true;
     const k = prov + "\u0001" + prod;
-    const g = grupos[k] = grupos[k] || { prov: prov, prod: prod, unidad: String(r[C.unidad] || ""), bares: {}, cant: 0, plata: 0, conPrecio: 0 };
+    const g = grupos[k] = grupos[k] || { prov: prov, prod: prod, unidad: String(r[C.unidad] || ""), bares: {}, cant: 0 };
     const q = num_(r[C.cant]);
     g.bares[bar] = (g.bares[bar] || 0) + q;
     g.cant += q;
-    if (r[C.subtotal] !== "" && r[C.subtotal] !== null) { g.plata += num_(r[C.subtotal]); g.conPrecio += q; }
   });
   const cols = bares.filter(function (b) { return usados[b]; })
     .concat(Object.keys(usados).filter(function (b) { return bares.indexOf(b) < 0; }));
-  const head = ["Proveedor", "Producto", "Unidad"].concat(cols).concat(["Total", "Precio", "Plata estimada"]);
+  const head = ["Proveedor", "Producto", "Unidad"].concat(cols).concat(["Total"]);
   const lista = Object.keys(grupos).map(function (k) { return grupos[k]; }).sort(function (a, b) {
     const sa = a.prov === "Sin proveedor" ? 1 : 0, sb = b.prov === "Sin proveedor" ? 1 : 0;
     return sa - sb || a.prov.localeCompare(b.prov) || a.prod.localeCompare(b.prod);
   });
   const out = [head], negrita = [head.map(function () { return "bold"; })], fondo = [head.map(function () { return "#EEEAE5"; })];
   let i = 0;
+  // Sin precios (decision de noviembre 2026): por proveedor, con un renglon
+  // en blanco entre uno y otro.
   while (i < lista.length) {
     const prov = lista[i].prov;
-    let plata = 0;
-    for (; i < lista.length && lista[i].prov === prov; i++) {
-      const g = lista[i];
-      plata += g.plata;
-      out.push([g.prov, g.prod, g.unidad].concat(cols.map(function (b) { return g.bares[b] || ""; }))
-        .concat([g.cant, g.conPrecio ? Math.round(g.plata / g.conPrecio * 100) / 100 : "sin precio", g.plata || ""]));
+    if (out.length > 1) {
+      out.push(head.map(function () { return ""; }));
       negrita.push(head.map(function () { return "normal"; }));
       fondo.push(head.map(function () { return "#FFFFFF"; }));
     }
-    const tot = head.map(function () { return ""; });
-    tot[0] = "Total " + prov; tot[head.length - 1] = plata || "";
-    out.push(tot);
-    negrita.push(head.map(function () { return "bold"; }));
-    fondo.push(head.map(function () { return "#F7F5F2"; }));
+    for (; i < lista.length && lista[i].prov === prov; i++) {
+      const g = lista[i];
+      out.push([g.prov, g.prod, g.unidad].concat(cols.map(function (b) { return g.bares[b] || ""; })).concat([g.cant]));
+      negrita.push(head.map(function (h, j) { return j === 0 || j === head.length - 1 ? "bold" : "normal"; }));
+      fondo.push(head.map(function () { return "#FFFFFF"; }));
+    }
   }
   if (out.length === 1) { out.push(head.map(function (h, j) { return j ? "" : "No hay pedidos entre esas fechas."; })); negrita.push(negrita[0].map(function () { return "normal"; })); fondo.push(fondo[1] || head.map(function () { return "#FFFFFF"; })); }
   const ultimaFila = Math.max(sh.getLastRow(), RESPED_FILA);
@@ -1327,7 +1428,6 @@ function resumirPedidos_() {
   rango.setValues(out);
   rango.setFontWeights(negrita);
   rango.setBackgrounds(fondo);
-  sh.getRange(RESPED_FILA + 1, head.length - 1, out.length, 2).setNumberFormat("$ #,##0");
   sh.setFrozenRows(RESPED_FILA);
 }
 
@@ -1599,7 +1699,7 @@ function abrirBar_(yo, barNombre) {
 }
 
 // Lo leido en un pedido anterior no sirve para este.
-function olvidar_() { CATALOGO_ = null; PB_ = null; PRECIOS_ = null; EQUIV_ = null; PROV_BEBIDA_ = null; SS = null; CACHE_LEIDO_ = {}; }
+function olvidar_() { CATALOGO_ = null; MAESTRO_ = null; PB_ = null; PRECIOS_ = null; EQUIV_ = null; PROV_BEBIDA_ = null; SS = null; CACHE_LEIDO_ = {}; }
 
 function doGet(e) {
   olvidar_();

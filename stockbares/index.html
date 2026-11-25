@@ -316,15 +316,6 @@
           <div class="cfg-list" id="nuevosList"></div>
         </div>
       </div>
-      <div class="accordion-item" id="cfgPrecios" style="display:none">
-        <button class="accordion-header" data-target="bodySinPrecio">
-          <span>Productos sin precio</span><span class="accordion-meta" id="countSinPrecio">0</span>
-        </button>
-        <div class="accordion-body" id="bodySinPrecio">
-          <div class="help-text">Estos productos de Barra de este bar no tienen precio. El precio sale de la última compra en las hojas «Compras» de la planilla central (Sistema Bares), buscando el mismo nombre (o el código). Si en las compras figura con otro nombre, anotalo en la hoja Equivalencias. Mientras tanto, en los pedidos dicen «sin precio». De las compras se toman solo bebidas: lo de Cocina no lleva precio.</div>
-          <div class="cfg-list" id="sinPrecioList"></div>
-        </div>
-      </div>
       <div class="accordion-item">
         <button class="accordion-header" data-target="bodyCantidades">
           <span>Cantidades</span><span class="accordion-meta" id="countCantidades">0</span>
@@ -372,7 +363,7 @@
   <div id="noAccess" class="noaccess" style="display:none"></div>
 
   <nav class="tabbar" id="tabbar">
-    <button class="tab-btn active" data-tab="inicio"><span class="ic">&#8962;</span>Inicio</button>
+    <button class="tab-btn active" data-tab="inicio"><span class="ic">&#8962;</span>Stock</button>
     <button class="tab-btn" data-tab="pedidos" id="tabPedidos" style="display:none"><span class="ic">$</span>Pedidos</button>
     <button class="tab-btn" data-tab="historial"><span class="ic">&#8801;</span>Historial</button>
     <button class="tab-btn" data-tab="config"><span class="ic">&#9881;</span>Config</button>
@@ -565,7 +556,7 @@
 const APP_NAME = "Stock";
 // Versión publicada. Tiene que ser igual a la de stockbares/version.json:
 // si el archivo dice otra, la app se recarga sola con la versión nueva.
-const APP_VERSION = "2026-11-02.1";
+const APP_VERSION = "2026-11-25.1";
 // Quiénes usan la app y qué puede hacer cada uno.
 //   cargar: carga y corrige el stock de un día mientras está abierto.
 //   cerrar: cierra el stock de un día (después nadie lo puede cambiar).
@@ -1397,14 +1388,7 @@ function renderConfig() {
   document.getElementById("countProductos").textContent = productos.length;
   document.getElementById("countUnidades").textContent = UNITS.length;
   document.getElementById("countCantidades").textContent = CANTS.length;
-  // Aviso de productos sin precio (solo con la planilla central, para quien arma el catálogo).
-  const sinP = sinPrecio();
-  document.getElementById("cfgPrecios").style.display = central && can("config") ? "block" : "none";
   renderNuevos();
-  document.getElementById("countSinPrecio").textContent = sinP.length;
-  document.getElementById("sinPrecioList").innerHTML = sinP.length
-    ? sinP.map(p => '<div class="cfg-row"><div><div class="n">' + esc(p.nombre) + '</div><div class="d">' + esc([p.categoria, famOf(p)].join(" · ")) + '</div></div></div>').join("")
-    : '<div class="help-text" style="margin:0;">Todos los productos tienen precio.</div>';
 
   let html = "";
   const fila = p => '<button class="cfg-row" data-prod="' + esc(p.nombre) + '"><div><div class="n">' + (esTop(p) ? "★ " : "") + esc(p.nombre) + '</div><div class="d">' +
@@ -1741,7 +1725,7 @@ document.getElementById("wNext1").addEventListener("click", () => {
   if (!f) { alert("Elegí la fecha."); return; }
   if (isCerrado(f)) {
     alert("El stock del " + dayLabelLong(f) + " ya está cerrado y no se puede modificar." +
-      (can("reabrir") ? "\n\nSi hay que cambiar algo, reabrilo desde Inicio." : "\n\nSi hay que corregir algo, pedíselo a Noel."));
+      (can("reabrir") ? "\n\nSi hay que cambiar algo, reabrilo desde Stock." : "\n\nSi hay que corregir algo, pedíselo a Noel."));
     return;
   }
   wFecha = f;
@@ -1911,21 +1895,11 @@ function productosPedido(cat) {
 }
 function prodPedido(n) { return prodByName(n) || productosPedido("Barra").find(p => p.nombre === n); }
 function infoPrecio(nombre) { return precios[nombre] || comprasPedido.find(x => x && x.nombre === nombre) || null; }
-// El costo de la última compra; con proveedor, el de la última compra a ese proveedor.
-function precioDe(nombre, prov) {
-  const x = infoPrecio(nombre);
-  if (!x) return null;
-  const v = prov && x.porProveedor && typeof x.porProveedor[prov] === "number" ? x.porProveedor[prov] : x.costo;
-  return typeof v === "number" && v > 0 ? v : null;
-}
 function proveedoresDeProd(nombre) {
   const x = infoPrecio(nombre);
   const l = x && Array.isArray(x.proveedores) ? x.proveedores.filter(Boolean) : [];
   return l.length ? l : [SIN_PROV];
 }
-// Productos de Barra sin precio (para avisarle a quien arma el catálogo). De
-// las compras se toman solo bebidas: Cocina no lleva precio.
-function sinPrecio() { return productos.filter(p => normCat(p.categoria) === "Barra" && precioDe(p.nombre) === null); }
 // Proveedores de una categoría, por orden alfabético ("Sin proveedor" al final).
 function proveedoresDe(cat) {
   const l = [];
@@ -1933,8 +1907,6 @@ function proveedoresDe(cat) {
   return l.filter(v => v !== SIN_PROV).sort((a, b) => a.localeCompare(b, "es")).concat(l.includes(SIN_PROV) ? [SIN_PROV] : []);
 }
 function productosDeProv(cat, prov) { return productosPedido(cat).filter(p => proveedoresDeProd(p.nombre).includes(prov)); }
-
-function fmtPesos(n) { return "$\u00a0" + Math.round(Number(n)).toLocaleString("es-AR"); }
 
 // Los renglones del borrador, en el orden de los proveedores y del catálogo.
 function lineasBorrador(cat) {
@@ -1949,21 +1921,15 @@ function lineasBorrador(cat) {
       const q = b.items[prov + SEP + n];
       if (!(q > 0)) return;
       const p = prodPedido(n);
-      const precio = precioDe(n, prov);
-      out.push({ proveedor: prov, producto: n, codigo: p && p.codigo ? String(p.codigo) : "", cantidad: q, unidad: p ? p.unidad : "", precio: precio, subtotal: precio === null ? null : Math.round(q * precio * 100) / 100 });
+      // Sin precios (decisión de Noel, noviembre 2026): Precio y Subtotal van vacíos.
+      out.push({ proveedor: prov, producto: n, codigo: p && p.codigo ? String(p.codigo) : "", cantidad: q, unidad: p ? p.unidad : "", precio: null, subtotal: null });
     });
   });
   return out;
 }
-function totalDe(lineas) {
-  return { total: lineas.reduce((t, l) => t + (l.subtotal || 0), 0), sinPrecio: lineas.filter(l => l.subtotal === null).length, n: lineas.length };
-}
 function totalHtml(lineas) {
-  const t = totalDe(lineas);
-  if (!t.n) return '<span>Todavía no hay nada en el pedido.</span>';
-  return '<span>' + (t.n === 1 ? "1 producto" : t.n + " productos") +
-    (t.sinPrecio ? '<small>' + (t.sinPrecio === 1 ? "1 sin precio, no suma" : t.sinPrecio + " sin precio, no suman") + '</small>' : "") +
-    '</span><strong>' + fmtPesos(t.total) + '</strong>';
+  if (!lineas.length) return '<span>Todavía no hay nada en el pedido.</span>';
+  return '<span>' + (lineas.length === 1 ? "1 producto" : lineas.length + " productos") + '</span>';
 }
 
 function openPedido() {
@@ -2063,9 +2029,7 @@ function pdRowHtml(p) {
   const b = borrador(pdCat);
   const prov = provDe(b, p.nombre);
   const provs = proveedoresDeProd(p.nombre);
-  const pr = precioDe(p.nombre, prov);
   const det = [unitLabel(p.unidad), p.contenido].filter(Boolean).map(esc);
-  det.push('<span class="pr">' + (pr === null ? '<span class="sp">sin precio</span>' : esc(fmtPesos(pr)) + " c/u") + '</span>');
   // Si se le compra a varios, se puede elegir a cuál pedirle.
   const pv = provs.length > 1
     ? '<select data-pv>' + provs.map(v => '<option value="' + esc(v) + '"' + (v === prov ? " selected" : "") + '>' + esc(v) + '</option>').join("") + '</select>'
@@ -2092,8 +2056,6 @@ function bindPdRows(box, totalId) {
       row.setAttribute("data-prov", sel.value);
       if (cant > 0) bb.items[sel.value + SEP + nombre] = cant;
       guardarBorrador(pdCat, bb);
-      const pr = precioDe(nombre, sel.value);
-      row.querySelector(".pr").innerHTML = pr === null ? '<span class="sp">sin precio</span>' : esc(fmtPesos(pr)) + " c/u";
       pdCambio(row, totalId);
     });
     pdMarcar(row);
@@ -2112,14 +2074,10 @@ function openPdLista() {
   goPd(3);
 }
 
-// Muestra el subtotal del renglón ("= $ 7.200").
+// Marca el renglón que tiene cantidad.
 function pdMarcar(row) {
-  const inp = row.querySelector("input");
-  const q = parseQty(inp.value);
-  const pr = precioDe(inp.getAttribute("data-item"), row.getAttribute("data-prov"));
-  const ok = q !== null && !isNaN(q) && q > 0;
-  row.classList.toggle("filled", ok);
-  row.querySelector(".eq").textContent = ok && pr !== null ? "= " + fmtPesos(q * pr) : "";
+  const q = parseQty(row.querySelector("input").value);
+  row.classList.toggle("filled", q !== null && !isNaN(q) && q > 0);
 }
 
 // Cada número que se escribe queda en el borrador (no se pierde si se cierra la app).
@@ -2155,19 +2113,16 @@ function lineaTexto(l) {
 }
 function lineasHtml(lineas) {
   return porProveedor(lineas).map(g => {
-    const t = totalDe(g.lineas);
-    return '<div class="pd-prov"><span>' + esc(g.proveedor) + '</span><span>' + (t.sinPrecio === t.n ? '<span class="sp">sin precio</span>' : fmtPesos(t.total)) + '</span></div>' +
-      g.lineas.map(l => '<div class="g-line"><span>' + esc(lineaTexto(l)) + '</span><span class="q">' +
-        (l.subtotal === null ? '<span class="sp">sin precio</span>' : fmtPesos(l.subtotal)) + '</span></div>').join("");
+    return '<div class="pd-prov"><span>' + esc(g.proveedor) + '</span></div>' +
+      g.lineas.map(l => '<div class="g-line"><span>' + esc(lineaTexto(l)) + '</span></div>').join("");
   }).join("");
 }
 
 function renderPdResumen() {
   const lineas = lineasBorrador(pdCat);
-  const t = totalDe(lineas);
   document.getElementById("pdResumen").innerHTML = lineasHtml(lineas) +
     '<div class="pd-total" style="margin:12px 0 0;">' + totalHtml(lineas) + '</div>';
-  document.getElementById("pdEnviar").disabled = !t.n;
+  document.getElementById("pdEnviar").disabled = !lineas.length;
   document.getElementById("pdErr").style.display = "none";
 }
 
@@ -2243,14 +2198,11 @@ function pedidosAgrupados() {
   return Object.keys(g).map(k => g[k]).sort((a, b) => String(b[0].cargado).localeCompare(String(a[0].cargado)));
 }
 function renderPedidos() {
-  const sinP = productos.length ? sinPrecio().length : 0;
   const nue = comprasNuevas.length;
   const aviso = document.getElementById("sinPrecioAviso");
   const avisos = [];
   if (nue) avisos.push("<strong>" + (nue === 1 ? "1 producto nuevo" : nue + " productos nuevos") + " en las compras</strong> de " + esc(curBarName) +
     " que no " + (nue === 1 ? "está" : "están") + " en el stock.<br><button data-ver=\"bodyNuevos\">Revisar</button>");
-  if (sinP) avisos.push("<strong>" + (sinP === 1 ? "1 producto sin precio" : sinP + " productos sin precio") + "</strong> en " + esc(curBarName) +
-    ". En los pedidos dicen «sin precio» y no suman.<br><button data-ver=\"bodySinPrecio\" id=\"verSinPrecio\">Ver cuáles</button>");
   aviso.style.display = central && can("config") && avisos.length ? "block" : "none";
   aviso.innerHTML = avisos.join('<div style="height:12px"></div>');
   aviso.querySelectorAll("[data-ver]").forEach(x => x.addEventListener("click", () => {
@@ -2264,13 +2216,12 @@ function renderPedidos() {
   if (!todos.length) c.innerHTML = '<div class="empty-state">Todavía no hay pedidos.</div>';
   else c.innerHTML = mostrados.map(items => {
     const it = items[0];
-    const t = totalDe(items);
     const provs = porProveedor(items).length;
     const est = estadoPedido(items);
     const k = String(it.pedido || it.id);
     const ver = pedidosAbiertos.has(k);
     return '<details class="group" data-ped="' + esc(k) + '"' + (ver ? " open" : "") + '><summary><div class="g-left"><div class="g-title">Pedido del ' + esc(dayLabel(it.fecha)) + ' · ' + esc(it.categoria) + '</div>' +
-      '<div class="g-meta">' + (provs === 1 ? "1 proveedor" : provs + " proveedores") + ' · ' + esc(it.persona) + ' · ' + fmtPesos(t.total) + '</div></div>' +
+      '<div class="g-meta">' + (provs === 1 ? "1 proveedor" : provs + " proveedores") + ' · ' + esc(it.persona) + '</div></div>' +
       '<span class="estado ' + est.cls + '">' + esc(est.txt) + '</span></summary><div class="g-body">' + (ver ? pedidoBody(items) : "") + '</div></details>';
   }).join("");
   // El detalle se dibuja al abrir la tarjeta; las abiertas siguen abiertas.
@@ -2290,10 +2241,8 @@ function renderPedidos() {
 const pedidosAbiertos = new Set();
 function pedidoBody(items) {
   const it = items[0];
-  const t = totalDe(items);
   const ed = puedeEditar(items);
   return lineasHtml(items) +
-    (t.sinPrecio ? '<div class="g-extra">' + (t.sinPrecio === 1 ? "1 producto sin precio, no está" : t.sinPrecio + " productos sin precio, no están") + ' en el total.</div>' : "") +
     (it.nota ? '<div class="g-extra">Nota: ' + esc(it.nota) + '</div>' : "") +
     (ed ? '<button class="btn-edit" data-pdmod>Modificar pedido</button><button class="btn-del" data-pdborrar>Borrar pedido</button>' : "");
 }
@@ -2356,7 +2305,7 @@ function renderNuevos() {
   document.getElementById("nuevosBar").textContent = curBarName;
   const l = document.getElementById("nuevosList");
   l.innerHTML = comprasNuevas.map((x, i) => '<div class="nuevo-row"><div class="n">' + esc(x.nombre) + '</div><div class="d">' +
-    esc([x.proveedor, typeof x.costo === "number" ? fmtPesos(x.costo) : ""].filter(Boolean).join(" · ")) + '</div>' +
+    esc(x.proveedor || "") + '</div>' +
     '<div class="nuevo-btns"><button data-nuevo="' + i + '">Es nuevo</button><button data-igual="' + i + '">Es el mismo que…</button>' +
     '<button class="no" data-nostock="' + i + '">No es stock</button></div></div>').join("");
   l.querySelectorAll("[data-nuevo]").forEach(b => b.addEventListener("click", () => {
