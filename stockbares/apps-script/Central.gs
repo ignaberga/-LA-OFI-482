@@ -14,8 +14,8 @@
 //     Encargado) | Bares ("Todos" o el nombre del bar; varios separados
 //     por coma) | Clave | Link de instalacion. La Clave y el Link los arma
 //     el menu "Stock bares > Armar links de instalacion".
-//   - "Maestro" (desde noviembre 2026): Codigo | Producto | Familia |
-//     Proveedor, un renglon por producto. De ahi sale el proveedor de los
+//   - "Maestro" (desde noviembre 2026): Producto | Familia | Proveedor,
+//     un renglon por producto. De ahi sale el proveedor de los
 //     pedidos. Se completa a mano; el menu "Armar / completar Maestro"
 //     agrega los productos nuevos de los catalogos. Ya no se cargan
 //     compras ni se usan precios: las hojas de compras de abajo quedan de
@@ -518,8 +518,9 @@ function leerPrecios_() {
 }
 
 // ------------------------------------------------------------
-// Hoja "Maestro" (noviembre 2026): Codigo | Producto | Familia | Proveedor.
-// Un renglon por producto de los catalogos de todos los bares, con UN
+// Hoja "Maestro" (noviembre 2026): Producto | Familia | Proveedor. Un
+// renglon por producto (por nombre: el codigo no va porque cambia segun el
+// Cuccina de cada bar) de los catalogos de todos los bares, con UN
 // proveedor (el mismo para todos los bares). La completan Ignacio y Noel a
 // mano; el menu "Armar / completar Maestro" agrega los productos que falten
 // y llena los proveedores vacios con las compras que ya estaban cargadas,
@@ -528,41 +529,44 @@ function leerPrecios_() {
 // en el Maestro, se usa el de la ultima compra.
 // ------------------------------------------------------------
 const SHEET_MAESTRO = "Maestro";
-const MAESTRO_HEADERS = ["Código", "Producto", "Familia", "Proveedor"];
-function claveMaestro_(codigo, nombre) { return String(codigo === null || codigo === undefined ? "" : codigo).trim() + "|" + norm_(nombre); }
+const MAESTRO_HEADERS = ["Producto", "Familia", "Proveedor"];
 
 function hojaMaestro_() {
   const sh = central_().getSheetByName(SHEET_MAESTRO);
-  if (sh) return sh;
-  const nueva = hojaCentral_(SHEET_MAESTRO, MAESTRO_HEADERS);
-  nueva.setFrozenRows(1);
-  return nueva;
+  if (!sh) {
+    const nueva = hojaCentral_(SHEET_MAESTRO, MAESTRO_HEADERS);
+    nueva.setFrozenRows(1);
+    return nueva;
+  }
+  // La primera version tenia la columna Codigo adelante: se saca (lo
+  // escrito en Producto, Familia y Proveedor queda igual).
+  if (norm_(sh.getRange(1, 1).getValue()) === "codigo") sh.deleteColumn(1);
+  return sh;
 }
 
-// { porClave: {codigo|nombre: proveedor}, porNombre: {nombre: proveedor} }
+// { nombre del producto (normalizado): proveedor }. Si un producto quedo
+// repetido, vale el primer proveedor escrito.
 let MAESTRO_ = null;
 function leerMaestro_() {
   if (MAESTRO_) return MAESTRO_;
-  const m = MAESTRO_ = { porClave: {}, porNombre: {} };
-  filasCentral_(SHEET_MAESTRO).forEach(function (r) {
-    const prov = String(r[3] || "").trim();
-    if (!String(r[1] || "").trim() || !prov) return;
-    m.porClave[claveMaestro_(r[0], r[1])] = prov;
-    if (!(norm_(r[1]) in m.porNombre)) m.porNombre[norm_(r[1])] = prov;
+  const m = MAESTRO_ = {};
+  const data = central_().getSheetByName(SHEET_MAESTRO) ? central_().getSheetByName(SHEET_MAESTRO).getDataRange().getValues() : [];
+  // Si todavia tiene la columna Codigo de la primera version, se corre.
+  const o = data.length && norm_(data[0][0]) === "codigo" ? 1 : 0;
+  data.slice(1).forEach(function (r) {
+    const k = norm_(r[o]), prov = String(r[o + 2] || "").trim();
+    if (k && prov && !(k in m)) m[k] = prov;
   });
   return m;
 }
-// Primero por codigo y nombre; si no esta, por el nombre solo.
-function proveedorMaestro_(m, codigo, nombre) {
-  return m.porClave[claveMaestro_(codigo, nombre)] || m.porNombre[norm_(nombre)] || "";
-}
+function proveedorMaestro_(m, nombre) { return m[norm_(nombre)] || ""; }
 
 function armarMaestro() {
   const sh = hojaMaestro_();
   const data = sh.getDataRange().getValues();
-  const filas = data.length > 1 ? data.slice(1).map(function (r) { return r.slice(0, 4); }) : [];
+  const filas = data.length > 1 ? data.slice(1).map(function (r) { return r.slice(0, 3); }) : [];
   const donde = {};
-  filas.forEach(function (r, i) { if (String(r[1]).trim()) donde[claveMaestro_(r[0], r[1])] = i; });
+  filas.forEach(function (r, i) { const k = norm_(r[0]); if (k && !(k in donde)) donde[k] = i; });
   const antes = filas.length;
   let completados = 0;
   const provConocidos = {};
@@ -573,13 +577,13 @@ function armarMaestro() {
     const pr = calcularPreciosBar_(b.nombre, catalogo, true).precios;
     catalogo.forEach(function (p) {
       const prov = ((pr[p.nombre] || {}).proveedores || []).filter(function (v) { return v && v !== "Sin proveedor"; })[0] || "";
-      const k = claveMaestro_(p.codigo, p.nombre);
+      const k = norm_(p.nombre);
       if (k in donde) {
         const r = filas[donde[k]];
-        if (!String(r[3]).trim() && prov) { r[3] = prov; completados++; }
+        if (!String(r[2]).trim() && prov) { r[2] = prov; completados++; }
       } else {
         donde[k] = filas.length;
-        filas.push([p.codigo, p.nombre, p.familia, prov]);
+        filas.push([p.nombre, p.familia, prov]);
       }
     });
   });
@@ -590,19 +594,19 @@ function armarMaestro() {
   }
   // Lista de proveedores para elegir (se puede escribir uno nuevo igual).
   leerPrecios_().forEach(function (p) { if (p.proveedor && p.proveedor !== "Sin proveedor") provConocidos[p.proveedor] = true; });
-  filas.forEach(function (r) { if (String(r[3]).trim()) provConocidos[String(r[3]).trim()] = true; });
+  filas.forEach(function (r) { if (String(r[2]).trim()) provConocidos[String(r[2]).trim()] = true; });
   const lista = Object.keys(provConocidos).sort(function (a, b) { return a.localeCompare(b); }).slice(0, 500);
   const n = Math.max(sh.getMaxRows() - 1, 1);
   if (lista.length) {
-    sh.getRange(2, 4, n, 1).setDataValidation(SpreadsheetApp.newDataValidation()
+    sh.getRange(2, 3, n, 1).setDataValidation(SpreadsheetApp.newDataValidation()
       .requireValueInList(lista, true).setAllowInvalid(true).build());
   }
   sh.setConditionalFormatRules([SpreadsheetApp.newConditionalFormatRule()
-    .whenFormulaSatisfied('=AND($B2<>"",$D2="")').setBackground("#FFF2CC")
+    .whenFormulaSatisfied('=AND($A2<>"",$C2="")').setBackground("#FFF2CC")
     .setRanges([sh.getRange(2, 1, n, MAESTRO_HEADERS.length)]).build()]);
   MAESTRO_ = null;
   nuevaVersionPrecios_();
-  const faltan = filas.filter(function (r) { return String(r[1]).trim() && !String(r[3]).trim(); }).length;
+  const faltan = filas.filter(function (r) { return String(r[0]).trim() && !String(r[2]).trim(); }).length;
   SpreadsheetApp.getUi().alert("Listo.\n\n" + (filas.length - antes) + " productos nuevos en el Maestro.\n" +
     completados + " proveedores completados con las compras.\n" + faltan + " productos siguen sin proveedor (en amarillo): " +
     "completalos a mano en la columna Proveedor.");
@@ -707,7 +711,7 @@ function calcularPreciosBar_(barNombre, catalogo, sinMaestro) {
       .sort(function (a, b) { return b.fecha - a.fecha; });
     hits.forEach(function (h) { usados[h.i] = true; });
     // El proveedor de la hoja Maestro manda (uno solo por producto).
-    const pm = maestro && proveedorMaestro_(maestro, prod.codigo, prod.nombre);
+    const pm = maestro && proveedorMaestro_(maestro, prod.nombre);
     if (pm) { out[prod.nombre] = { costo: null, proveedores: [pm], porProveedor: {} }; return; }
     // De las compras se toman solo bebidas: lo de Cocina no lleva precio.
     if (prod.categoria !== "Barra") { out[prod.nombre] = { costo: null, proveedores: [], porProveedor: {} }; return; }
@@ -747,7 +751,7 @@ function calcularPreciosBar_(barNombre, catalogo, sinMaestro) {
     const prod = m && /^lit/.test(norm_(l[0].medida)) ? { unidad: "Botellas", contenido: m[1].replace(",", ".") + " " + m[2].toLowerCase().replace(/^lts?$/, "l") } : null;
     const porProveedor = {}, provs = [];
     l.forEach(function (h) { if (provs.indexOf(h.proveedor) < 0) { provs.push(h.proveedor); porProveedor[h.proveedor] = prod ? precioPorUnidad_(h, prod) : h.precio; } });
-    const pm = maestro && proveedorMaestro_(maestro, l[0].codigo, l[0].nombre);
+    const pm = maestro && proveedorMaestro_(maestro, l[0].nombre);
     return { nombre: l[0].nombre, codigo: l[0].codigo || "", unidad: prod ? prod.unidad : unidadDeMedida_(l[0].medida), contenido: prod ? prod.contenido : "",
       costo: porProveedor[provs[0]], proveedores: [pm || provs[0]], porProveedor: porProveedor };
   }).sort(function (a, b) { return a.nombre.localeCompare(b.nombre); });

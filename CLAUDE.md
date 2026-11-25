@@ -249,15 +249,15 @@ quiere armar.
   bares | Total, con un renglón en blanco entre proveedores. **Ya no se
   cargan compras** (se sacaron del menú "Cargar compras" y "Recalcular
   precios"; el código y las hojas viejas quedan). Hoja **Maestro** en la
-  central: Código | Producto | Familia (del Catálogo) | Proveedor, un
-  renglón por producto de todos los catálogos (código + nombre; el mismo
-  proveedor para todos los bares), **un solo proveedor** por producto. La
+  central: Producto | Familia (del Catálogo) | Proveedor, un renglón por
+  producto de todos los catálogos, **por nombre** (sin código: el código
+  cambia según el Cuccina de cada bar; decisión de Ignacio), el mismo
+  proveedor para todos los bares, **un solo proveedor** por producto. La
   completan Ignacio y Noel a mano (lista desplegable con los proveedores
   conocidos; vacío = amarillo). Menú "Stock bares → Armar / completar
   Maestro" (`armarMaestro`): agrega los productos que falten y llena los
   proveedores vacíos con las compras ya cargadas, nunca pisa lo escrito.
-  Para los pedidos manda el Maestro (por código y nombre, si no por
-  nombre); si el producto no está, el de la última compra; si no, "Sin
+  Para los pedidos manda el Maestro (por nombre); si el producto no está, el de la última compra; si no, "Sin
   proveedor". Los "Otros (de las compras)" siguen. La pestaña Inicio de
   la app se llama **Stock**.
 - **Velocidad (17/10/2026, pedido de Ignacio):**
