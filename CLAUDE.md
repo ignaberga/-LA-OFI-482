@@ -249,17 +249,26 @@ quiere armar.
   bares | Total, con un renglón en blanco entre proveedores. **Ya no se
   cargan compras** (se sacaron del menú "Cargar compras" y "Recalcular
   precios"; el código y las hojas viejas quedan). Hoja **Maestro** en la
-  central: Producto | Familia (del Catálogo) | Proveedor, un renglón por
-  producto de todos los catálogos, **por nombre** (sin código: el código
-  cambia según el Cuccina de cada bar; decisión de Ignacio), el mismo
-  proveedor para todos los bares, **un solo proveedor** por producto. La
-  completan Ignacio y Noel a mano (lista desplegable con los proveedores
-  conocidos; vacío = amarillo). Menú "Stock bares → Armar / completar
-  Maestro" (`armarMaestro`): agrega los productos que falten y llena los
-  proveedores vacíos con las compras ya cargadas, nunca pisa lo escrito.
-  Para los pedidos manda el Maestro (por nombre); si el producto no está, el de la última compra; si no, "Sin
-  proveedor". Los "Otros (de las compras)" siguen. La pestaña Inicio de
-  la app se llama **Stock**.
+  central: Producto | Categoría | Familia | Unidad | Proveedor, un renglón
+  por producto, **por nombre** (sin código: el código cambia según el
+  Cuccina de cada bar; decisión de Ignacio), el mismo proveedor para
+  todos los bares, **un solo proveedor**. Tiene los productos de todos los
+  catálogos (categoría, familia y unidad del Catálogo) y las bebidas de
+  las compras que no están en ningún catálogo (familia "Otros", unidad de
+  la compra). La completan Ignacio y Noel a mano (listas para elegir;
+  sin proveedor = amarillo). Menú "Stock bares → Armar / completar
+  Maestro" (`armarMaestro`): agrega lo que falte y llena lo vacío, nunca
+  pisa lo escrito; las hojas de versiones anteriores (con Código, o de 3
+  columnas) se pasan a las columnas nuevas (`colsMaestro_` lee por
+  título). **Pedidos:** el proveedor sale del Maestro (si el producto no
+  está, de la última compra; si no, "Sin proveedor"); además del catálogo
+  del bar se puede pedir **cualquier producto del Maestro** de esa
+  categoría que no esté en su catálogo, cada uno en su familia (las del
+  catálogo primero, después las otras por orden alfabético y "Otros" al
+  final; `otrosParaPedidos_`). Con el Maestro armado, las hojas Compras,
+  Proveedores…, Precios, Equivalencias y Proveedores de bebida ya no
+  hacen falta (si se borran Precios y Compras, los "Otros" pierden el
+  código de Cuccina). La pestaña Inicio de la app se llama **Stock**.
 - **Velocidad (17/10/2026, pedido de Ignacio):**
   - Planilla central: memoria rápida de Google (CacheService) para
     Personas y Bares (10 min) y los precios de cada bar (6 h, clave con la

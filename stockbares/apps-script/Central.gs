@@ -14,8 +14,8 @@
 //     Encargado) | Bares ("Todos" o el nombre del bar; varios separados
 //     por coma) | Clave | Link de instalacion. La Clave y el Link los arma
 //     el menu "Stock bares > Armar links de instalacion".
-//   - "Maestro" (desde noviembre 2026): Producto | Familia | Proveedor,
-//     un renglon por producto. De ahi sale el proveedor de los
+//   - "Maestro" (desde noviembre 2026): Producto | Categoria | Familia |
+//     Unidad | Proveedor, un renglon por producto. De ahi sale el proveedor de los
 //     pedidos. Se completa a mano; el menu "Armar / completar Maestro"
 //     agrega los productos nuevos de los catalogos. Ya no se cargan
 //     compras ni se usan precios: las hojas de compras de abajo quedan de
@@ -518,95 +518,148 @@ function leerPrecios_() {
 }
 
 // ------------------------------------------------------------
-// Hoja "Maestro" (noviembre 2026): Producto | Familia | Proveedor. Un
-// renglon por producto (por nombre: el codigo no va porque cambia segun el
-// Cuccina de cada bar) de los catalogos de todos los bares, con UN
-// proveedor (el mismo para todos los bares). La completan Ignacio y Noel a
-// mano; el menu "Armar / completar Maestro" agrega los productos que falten
-// y llena los proveedores vacios con las compras que ya estaban cargadas,
-// sin pisar nada de lo escrito. Lo que queda sin proveedor se ve amarillo.
-// Para los pedidos, el proveedor del Maestro manda; si un producto no esta
-// en el Maestro, se usa el de la ultima compra.
+// Hoja "Maestro" (noviembre 2026): Producto | Categoria | Familia | Unidad
+// | Proveedor. Un renglon por producto (por nombre: el codigo no va porque
+// cambia segun el Cuccina de cada bar), con UN proveedor (el mismo para
+// todos los bares). Estan los productos de los catalogos de todos los
+// bares y las bebidas compradas que no estan en ningun catalogo (familia
+// "Otros"). La completan Ignacio y Noel a mano; el menu "Armar / completar
+// Maestro" agrega los productos que falten y llena lo vacio (categoria,
+// familia, unidad y proveedor) con los catalogos y las compras que ya
+// estaban cargadas, sin pisar nada de lo escrito. Sin proveedor = amarillo.
+// En los pedidos: el proveedor del Maestro manda; ademas del catalogo del
+// bar se pueden pedir todos los productos del Maestro de esa categoria
+// (cada uno en su familia).
 // ------------------------------------------------------------
 const SHEET_MAESTRO = "Maestro";
-const MAESTRO_HEADERS = ["Producto", "Familia", "Proveedor"];
+const MAESTRO_HEADERS = ["Producto", "Categoría", "Familia", "Unidad", "Proveedor"];
+const FAMILIA_OTROS = "Otros";
 
-function hojaMaestro_() {
-  const sh = central_().getSheetByName(SHEET_MAESTRO);
-  if (!sh) {
-    const nueva = hojaCentral_(SHEET_MAESTRO, MAESTRO_HEADERS);
-    nueva.setFrozenRows(1);
-    return nueva;
-  }
-  // La primera version tenia la columna Codigo adelante: se saca (lo
-  // escrito en Producto, Familia y Proveedor queda igual).
-  if (norm_(sh.getRange(1, 1).getValue()) === "codigo") sh.deleteColumn(1);
-  return sh;
+// Columnas del Maestro por su titulo (asi se leen tambien las hojas de las
+// versiones anteriores: Codigo | Producto | Familia | Proveedor, o
+// Producto | Familia | Proveedor).
+function colsMaestro_(titulos) {
+  const t = (titulos || []).map(norm_);
+  const c = function (n) { return t.indexOf(n); };
+  return { producto: c("producto"), categoria: c("categoria"), familia: c("familia"), unidad: c("unidad"), proveedor: c("proveedor") };
+}
+function filasMaestro_(data) {
+  if (!data.length) return [];
+  const C = colsMaestro_(data[0]);
+  if (C.producto < 0) return [];
+  const v = function (r, i) { return i >= 0 ? String(r[i] === null || r[i] === undefined ? "" : r[i]).trim() : ""; };
+  return data.slice(1).map(function (r) {
+    return { producto: v(r, C.producto), categoria: v(r, C.categoria), familia: v(r, C.familia), unidad: v(r, C.unidad), proveedor: v(r, C.proveedor) };
+  }).filter(function (x) { return x.producto; });
 }
 
-// { nombre del producto (normalizado): proveedor }. Si un producto quedo
-// repetido, vale el primer proveedor escrito.
+// { filas: [...], porNombre: {nombre normalizado: proveedor} }. Si un
+// producto quedo repetido, vale el primero. Se guarda en la memoria rapida.
 let MAESTRO_ = null;
 function leerMaestro_() {
   if (MAESTRO_) return MAESTRO_;
-  const m = MAESTRO_ = {};
-  const data = central_().getSheetByName(SHEET_MAESTRO) ? central_().getSheetByName(SHEET_MAESTRO).getDataRange().getValues() : [];
-  // Si todavia tiene la columna Codigo de la primera version, se corre.
-  const o = data.length && norm_(data[0][0]) === "codigo" ? 1 : 0;
-  data.slice(1).forEach(function (r) {
-    const k = norm_(r[o]), prov = String(r[o + 2] || "").trim();
-    if (k && prov && !(k in m)) m[k] = prov;
-  });
-  return m;
+  const k = "ms|" + versionPrecios_();
+  const c = cacheGet_(k);
+  if (c && Array.isArray(c.filas)) return (MAESTRO_ = c);
+  const sh = central_().getSheetByName(SHEET_MAESTRO);
+  const filas = filasMaestro_(sh ? sh.getDataRange().getValues() : []);
+  const porNombre = {};
+  filas.forEach(function (x) { const n = norm_(x.producto); if (x.proveedor && !(n in porNombre)) porNombre[n] = x.proveedor; });
+  MAESTRO_ = { filas: filas, porNombre: porNombre };
+  cachePut_(k, MAESTRO_, CACHE_PRECIOS_SEG);
+  return MAESTRO_;
 }
-function proveedorMaestro_(m, nombre) { return m[norm_(nombre)] || ""; }
+function proveedorMaestro_(m, nombre) { return m.porNombre[norm_(nombre)] || ""; }
+
+// Para los pedidos de un bar: los productos del Maestro que no estan en su
+// catalogo. Si todavia no hay Maestro, las bebidas que compro el bar.
+function otrosParaPedidos_(catalogo, extrasCompras) {
+  const m = leerMaestro_();
+  if (!m.filas.length) return extrasCompras;
+  const en = {}, cod = {};
+  catalogo.forEach(function (p) { en[norm_(p.nombre)] = true; });
+  (extrasCompras || []).forEach(function (x) { if (x.codigo) cod[norm_(x.nombre)] = x.codigo; });
+  const vistos = {};
+  return m.filas.filter(function (x) {
+    const n = norm_(x.producto);
+    if (en[n] || vistos[n]) return false;
+    return (vistos[n] = true);
+  }).map(function (x) {
+    return { nombre: x.producto, categoria: /^cocina|^comida/.test(norm_(x.categoria)) ? "Cocina" : "Barra", familia: x.familia || FAMILIA_OTROS, unidad: x.unidad,
+      contenido: "", codigo: cod[norm_(x.producto)] || "", proveedores: x.proveedor ? [x.proveedor] : [] };
+  });
+}
 
 function armarMaestro() {
-  const sh = hojaMaestro_();
+  const sh = central_().getSheetByName(SHEET_MAESTRO) || hojaCentral_(SHEET_MAESTRO, MAESTRO_HEADERS);
   const data = sh.getDataRange().getValues();
-  const filas = data.length > 1 ? data.slice(1).map(function (r) { return r.slice(0, 3); }) : [];
+  const C = colsMaestro_(data[0]);
+  const igual = MAESTRO_HEADERS.every(function (h, i) { return norm_(data[0][i]) === norm_(h); });
+  // Todo se pasa a Producto | Categoria | Familia | Unidad | Proveedor, sin
+  // perder nada de lo escrito.
+  const filas = filasMaestro_(data).map(function (x) { return [x.producto, x.categoria, x.familia, x.unidad, x.proveedor]; });
   const donde = {};
-  filas.forEach(function (r, i) { const k = norm_(r[0]); if (k && !(k in donde)) donde[k] = i; });
+  filas.forEach(function (r, i) { const k = norm_(r[0]); if (!(k in donde)) donde[k] = i; });
   const antes = filas.length;
   let completados = 0;
-  const provConocidos = {};
+  // Completa lo vacio de un producto; si no esta, lo agrega.
+  const poner = function (nombre, categoria, familia, unidad, prov) {
+    const k = norm_(nombre);
+    if (!(k in donde)) { donde[k] = filas.length; filas.push([nombre, categoria, familia, unidad, prov]); return; }
+    const r = filas[donde[k]];
+    if (!r[1]) r[1] = categoria;
+    if (!r[2]) r[2] = familia;
+    if (!r[3]) r[3] = unidad;
+    if (!r[4] && prov) { r[4] = prov; completados++; }
+  };
+  const provDe = function (x) { return ((x || {}).proveedores || []).filter(function (v) { return v && v !== "Sin proveedor"; })[0] || ""; };
+  const extras = [];
   leerBares_().forEach(function (b) {
     try { SS = SpreadsheetApp.openById(b.id); } catch (e) { return; }
     CATALOGO_ = null;
     const catalogo = readCatalogo_();
-    const pr = calcularPreciosBar_(b.nombre, catalogo, true).precios;
-    catalogo.forEach(function (p) {
-      const prov = ((pr[p.nombre] || {}).proveedores || []).filter(function (v) { return v && v !== "Sin proveedor"; })[0] || "";
-      const k = norm_(p.nombre);
-      if (k in donde) {
-        const r = filas[donde[k]];
-        if (!String(r[2]).trim() && prov) { r[2] = prov; completados++; }
-      } else {
-        donde[k] = filas.length;
-        filas.push([p.nombre, p.familia, prov]);
-      }
-    });
+    const pr = calcularPreciosBar_(b.nombre, catalogo, true);
+    catalogo.forEach(function (p) { poner(p.nombre, p.categoria, p.familia, p.unidad, provDe(pr.precios[p.nombre])); });
+    pr.extras.forEach(function (x) { extras.push(x); });
   });
   SS = null; CATALOGO_ = null;
+  // Las bebidas compradas que no estan en ningun catalogo, al final.
+  extras.forEach(function (x) { poner(x.nombre, "Barra", FAMILIA_OTROS, x.unidad, provDe(x)); });
+  if (!igual) {
+    // Hoja de una version anterior: se vacia y se escribe de nuevo con las
+    // columnas nuevas (los datos son los mismos, ya leidos arriba).
+    sh.getRange(1, 1, sh.getMaxRows(), sh.getMaxColumns()).clearDataValidations();
+    sh.clearContents();
+    sh.getRange(1, 1, 1, MAESTRO_HEADERS.length).setValues([MAESTRO_HEADERS]).setFontWeight("bold");
+  }
+  sh.setFrozenRows(1);
   if (filas.length) {
     lugar_(sh, filas.length + 1, MAESTRO_HEADERS.length);
     sh.getRange(2, 1, filas.length, MAESTRO_HEADERS.length).setValues(filas);
   }
-  // Lista de proveedores para elegir (se puede escribir uno nuevo igual).
-  leerPrecios_().forEach(function (p) { if (p.proveedor && p.proveedor !== "Sin proveedor") provConocidos[p.proveedor] = true; });
-  filas.forEach(function (r) { if (String(r[2]).trim()) provConocidos[String(r[2]).trim()] = true; });
-  const lista = Object.keys(provConocidos).sort(function (a, b) { return a.localeCompare(b); }).slice(0, 500);
+  // Listas para elegir (se puede escribir otra cosa igual).
   const n = Math.max(sh.getMaxRows() - 1, 1);
-  if (lista.length) {
-    sh.getRange(2, 3, n, 1).setDataValidation(SpreadsheetApp.newDataValidation()
-      .requireValueInList(lista, true).setAllowInvalid(true).build());
-  }
+  const lista = function (col) {
+    const o = {};
+    filas.forEach(function (r) { if (r[col]) o[r[col]] = true; });
+    return Object.keys(o).sort(function (a, b) { return a.localeCompare(b); }).slice(0, 500);
+  };
+  const provs = {};
+  lista(4).forEach(function (v) { provs[v] = true; });
+  leerPrecios_().forEach(function (p) { if (p.proveedor && p.proveedor !== "Sin proveedor") provs[p.proveedor] = true; });
+  const valid = function (col, l) {
+    if (l.length) sh.getRange(2, col, n, 1).setDataValidation(SpreadsheetApp.newDataValidation().requireValueInList(l, true).setAllowInvalid(true).build());
+  };
+  valid(2, ["Barra", "Cocina"]);
+  valid(3, lista(2));
+  valid(4, lista(3));
+  valid(5, Object.keys(provs).sort(function (a, b) { return a.localeCompare(b); }).slice(0, 500));
   sh.setConditionalFormatRules([SpreadsheetApp.newConditionalFormatRule()
-    .whenFormulaSatisfied('=AND($A2<>"",$C2="")').setBackground("#FFF2CC")
+    .whenFormulaSatisfied('=AND($A2<>"",$E2="")').setBackground("#FFF2CC")
     .setRanges([sh.getRange(2, 1, n, MAESTRO_HEADERS.length)]).build()]);
   MAESTRO_ = null;
   nuevaVersionPrecios_();
-  const faltan = filas.filter(function (r) { return String(r[0]).trim() && !String(r[2]).trim(); }).length;
+  const faltan = filas.filter(function (r) { return r[0] && !r[4]; }).length;
   SpreadsheetApp.getUi().alert("Listo.\n\n" + (filas.length - antes) + " productos nuevos en el Maestro.\n" +
     completados + " proveedores completados con las compras.\n" + faltan + " productos siguen sin proveedor (en amarillo): " +
     "completalos a mano en la columna Proveedor.");
@@ -1749,8 +1802,8 @@ function doGet_(e) {
       precios: pr.precios,
       whatsapp: bar.whatsapp,
       compras_nuevas: admin ? pr.nuevos : [],
-      // Para los pedidos: bebidas compradas que no estan en el catalogo.
-      compras_pedido: pr.extras,
+      // Para los pedidos: lo del Maestro que no esta en el catalogo del bar.
+      compras_pedido: otrosParaPedidos_(catalogo, pr.extras),
       planilla: admin ? "https://docs.google.com/spreadsheets/d/" + bar.id + "/edit" : ""
     });
   }

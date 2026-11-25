@@ -556,7 +556,7 @@
 const APP_NAME = "Stock";
 // Versión publicada. Tiene que ser igual a la de stockbares/version.json:
 // si el archivo dice otra, la app se recarga sola con la versión nueva.
-const APP_VERSION = "2026-11-25.1";
+const APP_VERSION = "2026-11-25.2";
 // Quiénes usan la app y qué puede hacer cada uno.
 //   cargar: carga y corrige el stock de un día mientras está abierto.
 //   cerrar: cierra el stock de un día (después nadie lo puede cambiar).
@@ -1869,8 +1869,8 @@ document.getElementById("pDelete").addEventListener("click", () => {
 const SIN_PROV = "Sin proveedor";
 const SEP = "\u0001";
 let pdStep = 1, pdCat = "", pdFam = "";
-// Las bebidas compradas que no están en el catálogo van en esta familia, al final.
-const OTROS_COMPRAS = "Otros (de las compras)";
+// Los productos del Maestro sin familia van en esta, al final.
+const OTROS = "Otros";
 
 function borradorKey() { return KEY_PREFIX + "bar_" + slug(curBarName) + "_pedido_borrador"; }
 function borradores() { const b = lsJson(borradorKey(), {}); return b && typeof b === "object" ? b : {}; }
@@ -1884,16 +1884,17 @@ function guardarBorrador(cat, b) {
   lsSet(borradorKey(), JSON.stringify(todos));
 }
 
-// En los pedidos están los productos del catálogo y, en Barra, además las
-// bebidas que se compraron y no están en el catálogo (el stock es solo el catálogo).
+// En los pedidos están los productos del catálogo y además los de la hoja
+// Maestro que no están en el catálogo de este bar (el stock es solo el
+// catálogo). Cada uno en su familia; sin familia, en «Otros».
 function productosPedido(cat) {
   const l = productosDe(cat);
-  if (cat !== "Barra") return l;
   const ya = new Set(l.map(p => norm(p.nombre)));
-  return l.concat(comprasPedido.filter(x => x && x.nombre && !ya.has(norm(x.nombre)))
-    .map(x => ({ nombre: x.nombre, categoria: "Barra", unidad: x.unidad || "", contenido: x.contenido || "", codigo: x.codigo || "", deCompras: true })));
+  return l.concat(comprasPedido.filter(x => x && x.nombre && !ya.has(norm(x.nombre)) && normCat(x.categoria || "Barra") === cat)
+    .map(x => ({ nombre: x.nombre, categoria: cat, unidad: x.unidad || "", contenido: x.contenido || "", codigo: x.codigo || "",
+      familia: String(x.familia || "").trim() || OTROS, deCompras: true })));
 }
-function prodPedido(n) { return prodByName(n) || productosPedido("Barra").find(p => p.nombre === n); }
+function prodPedido(n) { return prodByName(n) || productosPedido("Barra").concat(productosPedido("Cocina")).find(p => p.nombre === n); }
 function infoPrecio(nombre) { return precios[nombre] || comprasPedido.find(x => x && x.nombre === nombre) || null; }
 function proveedoresDeProd(nombre) {
   const x = infoPrecio(nombre);
@@ -1992,13 +1993,15 @@ function renderPedWizard() {
   if (pdStep === 4) renderPdResumen();
 }
 
-// Familias de los pedidos: las del catálogo, en su orden, y al final las
-// bebidas compradas que no están en el catálogo.
-function famPedido(p) { return p.deCompras ? OTROS_COMPRAS : famOf(p); }
+// Familias de los pedidos: las del catálogo, en su orden; después las otras
+// familias del Maestro, por orden alfabético, y al final «Otros».
+function famPedido(p) { return p.deCompras ? p.familia : famOf(p); }
 function familiasPedido(cat) {
   const l = familiasDe(cat);
-  if (productosPedido(cat).some(p => p.deCompras)) l.push(OTROS_COMPRAS);
-  return l;
+  const mas = [];
+  productosPedido(cat).forEach(p => { if (p.deCompras && !l.includes(p.familia) && !mas.includes(p.familia)) mas.push(p.familia); });
+  mas.sort((a, b) => a.localeCompare(b, "es"));
+  return l.concat(mas.filter(f => f !== OTROS), mas.includes(OTROS) ? [OTROS] : []);
 }
 // Los productos de una familia, por orden alfabético.
 function productosDeFam(cat, fam) {
