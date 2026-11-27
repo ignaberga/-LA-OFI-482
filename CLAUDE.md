@@ -271,6 +271,12 @@ quiere armar.
   Proveedores…, Precios, Equivalencias y Proveedores de bebida ya no
   hacen falta (si se borran Precios y Compras, los "Otros" pierden el
   código de Cuccina). La pestaña Inicio de la app se llama **Stock**.
+- **Limpieza (pedido de Ignacio, 27/11/2026):** tercera categoría **solo
+  para los pedidos** (`CATEGORIAS_PEDIDO` en la app; el stock sigue siendo
+  Barra y Cocina). Sus productos están en el Maestro con Categoría
+  "Limpieza" (`catMaestro_`), familias Químicos / Papeles / Bolsas /
+  Utensilios; se armaron a mano con los reportes de compras (Archi y Hugo:
+  familia LIMPIEZA; Felicidad e Industrias: por proveedor y nombre).
 - **Velocidad (17/10/2026, pedido de Ignacio):**
   - Planilla central: memoria rápida de Google (CacheService) para
     Personas y Bares (10 min) y los precios de cada bar (6 h, clave con la

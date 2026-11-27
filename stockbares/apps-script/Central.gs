@@ -569,6 +569,12 @@ function leerMaestro_() {
   cachePut_(k, MAESTRO_, CACHE_PRECIOS_SEG);
   return MAESTRO_;
 }
+// Categoria de un producto del Maestro: Barra, Cocina o Limpieza (esta
+// ultima solo para los pedidos; no se cuenta en el stock).
+function catMaestro_(c) {
+  const n = norm_(c);
+  return /^cocina|^comida/.test(n) ? "Cocina" : /^limpieza/.test(n) ? "Limpieza" : "Barra";
+}
 function proveedorMaestro_(m, nombre) { return m.porNombre[norm_(nombre)] || ""; }
 
 // Para los pedidos de un bar: los productos del Maestro que no estan en su
@@ -585,7 +591,7 @@ function otrosParaPedidos_(catalogo, extrasCompras) {
     if (en[n] || vistos[n]) return false;
     return (vistos[n] = true);
   }).map(function (x) {
-    return { nombre: x.producto, categoria: /^cocina|^comida/.test(norm_(x.categoria)) ? "Cocina" : "Barra", familia: x.familia || FAMILIA_OTROS, unidad: x.unidad,
+    return { nombre: x.producto, categoria: catMaestro_(x.categoria), familia: x.familia || FAMILIA_OTROS, unidad: x.unidad,
       contenido: "", codigo: cod[norm_(x.producto)] || "", proveedores: x.proveedor ? [x.proveedor] : [] };
   });
 }
@@ -650,7 +656,7 @@ function armarMaestro() {
   const valid = function (col, l) {
     if (l.length) sh.getRange(2, col, n, 1).setDataValidation(SpreadsheetApp.newDataValidation().requireValueInList(l, true).setAllowInvalid(true).build());
   };
-  valid(2, ["Barra", "Cocina"]);
+  valid(2, ["Barra", "Cocina", "Limpieza"]);
   valid(3, lista(2));
   valid(4, lista(3));
   valid(5, Object.keys(provs).sort(function (a, b) { return a.localeCompare(b); }).slice(0, 500));

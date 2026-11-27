@@ -166,6 +166,7 @@
   .choice .done { font-size: 13px; font-weight: 700; color: var(--green); background: var(--green-bg); padding: 5px 10px; border-radius: 20px; white-space: nowrap; }
   .choice.bebidas { border-left: 6px solid var(--blue); }
   .choice.comida { border-left: 6px solid var(--green); }
+  .choice.limpieza { border-left: 6px solid #8A5A9E; }
 
   .qlist { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
   .q-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 12px; border-bottom: 1px solid var(--line); }
@@ -556,7 +557,7 @@
 const APP_NAME = "Stock";
 // Versión publicada. Tiene que ser igual a la de stockbares/version.json:
 // si el archivo dice otra, la app se recarga sola con la versión nueva.
-const APP_VERSION = "2026-11-25.2";
+const APP_VERSION = "2026-11-27.1";
 // Quiénes usan la app y qué puede hacer cada uno.
 //   cargar: carga y corrige el stock de un día mientras está abierto.
 //   cerrar: cierra el stock de un día (después nadie lo puede cambiar).
@@ -588,6 +589,8 @@ const KEY_PREFIX = "stockbares_";
 const DEFAULT_UNITS = ["Botellas", "Kilos", "Unidades"];
 const DEFAULT_CANTS = ["500 cc", "700 cc", "750 cc", "1 l", "1,5 l"];
 const CATEGORIAS = ["Barra", "Cocina"];
+// En los pedidos además está Limpieza (sus productos salen de la hoja Maestro; no se cuentan en el stock).
+const CATEGORIAS_PEDIDO = ["Barra", "Cocina", "Limpieza"];
 // Nombres viejos de las categorías (así se guardaron las primeras pruebas).
 // No se renombran en la planilla: se leen con el nombre nuevo.
 const CAT_VIEJAS = { "Bebidas": "Barra", "Comida": "Cocina" };
@@ -1134,7 +1137,7 @@ function parseQty(s) {
 }
 function norm(s) { return String(s).toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, ""); }
 function unitLabel(u) { return String(u || "").toLowerCase(); }
-function catCls(c) { return normCat(c) === "Cocina" ? "comida" : "bebidas"; }
+function catCls(c) { const n = normCat(c); return n === "Cocina" ? "comida" : n === "Limpieza" ? "limpieza" : "bebidas"; }
 
 let toastTimer = null;
 function showToast(msg) {
@@ -1894,7 +1897,7 @@ function productosPedido(cat) {
     .map(x => ({ nombre: x.nombre, categoria: cat, unidad: x.unidad || "", contenido: x.contenido || "", codigo: x.codigo || "",
       familia: String(x.familia || "").trim() || OTROS, deCompras: true })));
 }
-function prodPedido(n) { return prodByName(n) || productosPedido("Barra").concat(productosPedido("Cocina")).find(p => p.nombre === n); }
+function prodPedido(n) { return prodByName(n) || CATEGORIAS_PEDIDO.flatMap(productosPedido).find(p => p.nombre === n); }
 function infoPrecio(nombre) { return precios[nombre] || comprasPedido.find(x => x && x.nombre === nombre) || null; }
 function proveedoresDeProd(nombre) {
   const x = infoPrecio(nombre);
@@ -1959,7 +1962,7 @@ function renderPedWizard() {
 
   if (pdStep === 1) {
     const c = document.getElementById("pdCats");
-    c.innerHTML = CATEGORIAS.map(cat => {
+    c.innerHTML = CATEGORIAS_PEDIDO.map(cat => {
       const n = Object.keys(borrador(cat).items).length;
       const l = productosPedido(cat).length;
       return '<button class="choice ' + catCls(cat) + '" data-pdcat="' + esc(cat) + '"' + (l ? "" : " disabled") + '><span>' + esc(cat) +
