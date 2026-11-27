@@ -219,7 +219,7 @@ function onEdit(e) {
     const n = e && e.range ? e.range.getSheet().getName() : "";
     if (n === SHEET_PERSONAS || n === SHEET_BARES) cacheBorrar_(["pb"]);
     if (n === SHEET_EQUIV || n === SHEET_PRECIOS || n === SHEET_MAESTRO || /^(compras|proveedores)\b/i.test(n)) nuevaVersionPrecios_();
-    if (n === SHEET_PEDIDOS || (n === SHEET_RESUMEN_PED && e.range.getRow() <= 2)) resumirPedidos_();
+    if (n === SHEET_PEDIDOS || (n === SHEET_RESUMEN_PED && e.range.getRow() <= 3)) resumirPedidos_();
   } catch (err) {}
 }
 
@@ -1409,39 +1409,53 @@ function hojaResumenPedidos_() {
   const c = central_();
   let sh = c.getSheetByName(SHEET_RESUMEN_PED);
   if (sh) {
-    // Hojas creadas antes de tener el calendario: se lo agrega una vez
+    // Hojas creadas antes de tener el calendario o el Bar: se agregan una vez
     if (!sh.getRange(1, 2).getDataValidation()) calendarioResumen_(sh);
+    if (norm_(sh.getRange(3, 1).getValue()) !== "bar") ponerBarResumen_(sh);
     return sh;
   }
   sh = c.insertSheet(SHEET_RESUMEN_PED);
   const hoy = new Date();
   const desde = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate() - 7);
-  sh.getRange(1, 1, 3, 2).setValues([["Desde", desde], ["Hasta", new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate())],
-    ["Cambiá las fechas y se arma solo. No cuenta los pedidos Cancelados.", ""]]);
+  sh.getRange(1, 1, 2, 2).setValues([["Desde", desde], ["Hasta", new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate())]]);
   sh.getRange(1, 1, 2, 1).setFontWeight("bold");
   sh.getRange(1, 2, 2, 1).setNumberFormat("dd/mm/yyyy").setBackground("#FFF2CC");
-  sh.getRange(3, 1).setFontColor("#6E6166");
   calendarioResumen_(sh);
+  ponerBarResumen_(sh);
   return sh;
+}
+// B3: de que bar (o "Todos"). La nota pasa al renglon 4.
+const TODOS_LOS_BARES = "Todos";
+function ponerBarResumen_(sh) {
+  sh.getRange(3, 1, 1, 2).setValues([["Bar", TODOS_LOS_BARES]]);
+  sh.getRange(3, 1).setFontWeight("bold").setFontColor("#000000");
+  sh.getRange(3, 2).setBackground("#FFF2CC");
+  sh.getRange(4, 1).setValue("Doble clic en la fecha para abrir el calendario; en Bar elegí uno o «Todos». Se arma solo. No cuenta los pedidos Cancelados.")
+    .setFontColor("#6E6166");
 }
 // Desde y Hasta solo aceptan fechas: con doble clic en la celda se abre el calendario
 function calendarioResumen_(sh) {
   sh.getRange(1, 2, 2, 1).setDataValidation(SpreadsheetApp.newDataValidation().requireDate()
     .setAllowInvalid(false).setHelpText("Doble clic para elegir la fecha en el calendario").build());
-  sh.getRange(3, 1).setValue("Doble clic en la fecha para abrir el calendario. Se arma solo. No cuenta los pedidos Cancelados.");
 }
 function resumirPedidos_() {
   const sh = hojaResumenPedidos_();
   const ped = central_().getSheetByName(SHEET_PEDIDOS);
-  const fechas = sh.getRange(1, 2, 2, 1).getValues();
+  const fechas = sh.getRange(1, 2, 3, 1).getValues();
   const desde = fechaMs_(fechas[0][0]), hasta = fechaMs_(fechas[1][0]);
   const todas = ped ? ped.getDataRange().getValues() : [[]];
   const C = colsPedidos_(todas[0]);
   const filas = todas.slice(1);
   const bares = leerBares_().map(function (b) { return b.nombre; });
+  // Lista de B3 (los bares cambian): se vuelve a poner cada vez.
+  sh.getRange(3, 2).setDataValidation(SpreadsheetApp.newDataValidation()
+    .requireValueInList([TODOS_LOS_BARES].concat(bares), true).setAllowInvalid(false).build());
+  const elegido = String(fechas[2][0] || "").trim();
+  const unBar = elegido && norm_(elegido) !== norm_(TODOS_LOS_BARES) ? elegido : "";
   const usados = {}, grupos = {};
   filas.forEach(function (r) {
     if (!String(r[5] || "").trim() || String(r[C.estado]) === "Cancelado") return;
+    if (unBar && !mismoBar_(r[1], unBar)) return;
     const f = fechaMs_(r[0]);
     if (!f || (desde && f < desde) || (hasta && f > hasta)) return;
     const prov = String(r[4] || "").trim() || "Sin proveedor", prod = String(r[5]).trim(), bar = String(r[1]).trim();
@@ -1477,7 +1491,7 @@ function resumirPedidos_() {
       fondo.push(head.map(function () { return "#FFFFFF"; }));
     }
   }
-  if (out.length === 1) { out.push(head.map(function (h, j) { return j ? "" : "No hay pedidos entre esas fechas."; })); negrita.push(negrita[0].map(function () { return "normal"; })); fondo.push(fondo[1] || head.map(function () { return "#FFFFFF"; })); }
+  if (out.length === 1) { out.push(head.map(function (h, j) { return j ? "" : "No hay pedidos " + (unBar ? "de " + unBar + " " : "") + "entre esas fechas."; })); negrita.push(negrita[0].map(function () { return "normal"; })); fondo.push(fondo[1] || head.map(function () { return "#FFFFFF"; })); }
   const ultimaFila = Math.max(sh.getLastRow(), RESPED_FILA);
   sh.getRange(RESPED_FILA, 1, ultimaFila - RESPED_FILA + 1, Math.max(sh.getMaxColumns(), 1)).clear();
   lugar_(sh, RESPED_FILA + out.length - 1, head.length);

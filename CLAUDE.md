@@ -221,7 +221,9 @@ quiere armar.
   (las cambia Noel y se rearma sola, `onEdit`); por
   proveedor → producto, una columna por bar, Total, Precio, Plata
   estimada y un renglón "Total <proveedor>" ("Sin proveedor" al final).
-  No cuenta los Cancelados. Se rearma también con cada pedido_*.
+  No cuenta los Cancelados. Se rearma también con cada pedido_*. En B3
+  **Bar** (lista: Todos o un bar, `ponerBarResumen_`): con un bar, solo
+  sus pedidos y su columna (pedido de Ignacio, 27/11/2026).
 - **Código de Cuccina en Conteos y Pedidos (pedido de Noel, 11/2026):**
   "el código es el conciliador, como un plan de cuentas"; Noel va a bajar
   Conteos e importarlo en Cuccina (el formato de importación todavía no
