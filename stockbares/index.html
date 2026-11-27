@@ -481,9 +481,14 @@
           <input type="date" id="pdFecha">
         </div>
         <div class="field"><label>¿Para dónde es?</label></div>
+        <div class="help-text" style="margin-top:-4px;">En un mismo pedido podés anotar de varias: anotá en una, volvé y elegí otra.</div>
         <div class="choices" id="pdCats"></div>
-        <div class="modal-actions">
-          <button class="btn-cancel" data-pdclose>Cancelar</button>
+        <div class="pd-foot">
+          <div class="pd-total" id="pdTotal1"></div>
+          <div class="modal-actions">
+            <button class="btn-cancel" data-pdclose>Cancelar</button>
+            <button class="btn-save" data-pdrevisar id="pdRevisar1">Revisar y enviar</button>
+          </div>
         </div>
       </div>
 
@@ -494,7 +499,7 @@
         <div class="pd-foot">
           <div class="pd-total" id="pdTotal2"></div>
           <div class="modal-actions">
-            <button class="btn-cancel" data-pdback="1">‹ Volver</button>
+            <button class="btn-cancel" data-pdback="1">‹ Categorías</button>
             <button class="btn-save" data-pdrevisar>Revisar y enviar</button>
           </div>
         </div>
@@ -520,7 +525,7 @@
         </div>
         <div class="err-msg" id="pdErr"></div>
         <div class="modal-actions">
-          <button class="btn-cancel" data-pdback="2">‹ Seguir agregando</button>
+          <button class="btn-cancel" data-pdback="1">‹ Seguir agregando</button>
           <button class="btn-save" id="pdEnviar">Enviar pedido</button>
         </div>
       </div>
@@ -558,7 +563,7 @@
 const APP_NAME = "Stock";
 // Versión publicada. Tiene que ser igual a la de stockbares/version.json:
 // si el archivo dice otra, la app se recarga sola con la versión nueva.
-const APP_VERSION = "2026-11-27.2";
+const APP_VERSION = "2026-11-27.3";
 // Quiénes usan la app y qué puede hacer cada uno.
 //   cargar: carga y corrige el stock de un día mientras está abierto.
 //   cerrar: cierra el stock de un día (después nadie lo puede cambiar).
@@ -1932,14 +1937,22 @@ function lineasBorrador(cat) {
   });
   return out;
 }
+// Un pedido puede tener productos de varias categorías: cada una tiene su
+// borrador y al enviar va todo junto (cada renglón con su categoría).
+function lineasTodas() { return CATEGORIAS_PEDIDO.flatMap(cat => lineasBorrador(cat).map(l => Object.assign({ categoria: cat }, l))); }
+function editandoPedido() { const c = CATEGORIAS_PEDIDO.find(cat => borrador(cat).editando); return c ? borrador(c).editando : ""; }
 function totalHtml(lineas) {
   if (!lineas.length) return '<span>Todavía no hay nada en el pedido.</span>';
-  return '<span>' + (lineas.length === 1 ? "1 producto" : lineas.length + " productos") + '</span>';
+  const cats = CATEGORIAS_PEDIDO.filter(c => lineas.some(l => l.categoria === c));
+  return '<span>' + (lineas.length === 1 ? "1 producto" : lineas.length + " productos") + ' en el pedido' +
+    (cats.length ? '<small>' + esc(cats.join(" · ")) + '</small>' : "") + '</span>';
 }
 
 function openPedido() {
   pdCat = ""; pdFam = "";
-  document.getElementById("pdFecha").value = todayStr();
+  // Si quedó algo anotado sin enviar, se sigue con su fecha.
+  const con = CATEGORIAS_PEDIDO.find(cat => Object.keys(borrador(cat).items).length);
+  document.getElementById("pdFecha").value = con ? borrador(con).fecha : todayStr();
   document.getElementById("pedOverlay").classList.add("open");
   goPd(1);
 }
@@ -1954,11 +1967,13 @@ function renderPedWizard() {
   [1, 2, 3, 4].forEach(n => { document.getElementById("pdStep" + n).style.display = n === pdStep ? "block" : "none"; });
   const b = pdCat ? borrador(pdCat) : null;
   const crumb = [];
-  if (pdStep > 1) crumb.push("Pedido " + curBarName + " · " + pdCat + " · " + dayLabelLong(b.fecha));
+  const fechaPd = document.getElementById("pdFecha").value || (b && b.fecha) || todayStr();
+  if (pdStep === 2 || pdStep === 3) crumb.push("Pedido " + curBarName + " · " + pdCat + " · " + dayLabelLong(fechaPd));
+  if (pdStep === 4) crumb.push("Pedido " + curBarName + " · " + dayLabelLong(fechaPd));
   if (pdStep === 3) crumb.push(pdFam);
   document.getElementById("pdCrumb").textContent = crumb.join(" · ");
-  const editando = b && b.editando;
-  document.getElementById("pdTitle").textContent = pdStep === 1 ? "Hacer pedido" : pdStep === 2 ? (editando ? "Modificar pedido" : "¿Qué familia?") : pdStep === 3 ? pdFam : "Revisar y enviar";
+  const editando = editandoPedido();
+  document.getElementById("pdTitle").textContent = pdStep === 1 ? (editando ? "Modificar pedido" : "Hacer pedido") : pdStep === 2 ? "¿Qué familia?" : pdStep === 3 ? pdFam : "Revisar y enviar";
   document.getElementById("pdEnviar").textContent = editando ? "Guardar cambios" : "Enviar pedido";
 
   if (pdStep === 1) {
@@ -1979,6 +1994,9 @@ function renderPedWizard() {
       guardarBorrador(pdCat, bb);
       goPd(2);
     }));
+    const todas = lineasTodas();
+    document.getElementById("pdTotal1").innerHTML = totalHtml(todas);
+    document.getElementById("pdRevisar1").style.display = todas.length ? "" : "none";
   }
   if (pdStep === 2) {
     const b = borrador(pdCat);
@@ -1992,7 +2010,7 @@ function renderPedWizard() {
     }).join("");
     c.querySelectorAll("[data-pdfam]").forEach(x => x.addEventListener("click", () => { pdFam = x.getAttribute("data-pdfam"); openPdLista(); }));
     buscarProducto();
-    document.getElementById("pdTotal2").innerHTML = totalHtml(lineasBorrador(pdCat));
+    document.getElementById("pdTotal2").innerHTML = totalHtml(lineasTodas());
   }
   if (pdStep === 4) renderPdResumen();
 }
@@ -2077,7 +2095,7 @@ function openPdLista() {
   buscar.value = "";
   buscar.style.display = lista.length > 12 ? "block" : "none";
   bindPdRows(box, "pdTotal3");
-  document.getElementById("pdTotal3").innerHTML = totalHtml(lineasBorrador(pdCat));
+  document.getElementById("pdTotal3").innerHTML = totalHtml(lineasTodas());
   goPd(3);
 }
 
@@ -2097,7 +2115,7 @@ function pdCambio(row, totalId) {
   if (q !== null && !isNaN(q) && q > 0) b.items[k] = q; else delete b.items[k];
   guardarBorrador(pdCat, b);
   pdMarcar(row);
-  document.getElementById(totalId || "pdTotal3").innerHTML = totalHtml(lineasBorrador(pdCat));
+  document.getElementById(totalId || "pdTotal3").innerHTML = totalHtml(lineasTodas());
 }
 
 document.getElementById("pdBuscar").addEventListener("input", (e) => {
@@ -2126,7 +2144,7 @@ function lineasHtml(lineas) {
 }
 
 function renderPdResumen() {
-  const lineas = lineasBorrador(pdCat);
+  const lineas = lineasTodas();
   document.getElementById("pdResumen").innerHTML = lineasHtml(lineas) +
     '<div class="pd-total" style="margin:12px 0 0;">' + totalHtml(lineas) + '</div>';
   document.getElementById("pdEnviar").disabled = !lineas.length;
@@ -2135,18 +2153,18 @@ function renderPdResumen() {
 
 document.getElementById("pdEnviar").addEventListener("click", () => {
   const err = document.getElementById("pdErr");
-  const lineas = lineasBorrador(pdCat);
+  const lineas = lineasTodas();
   if (!lineas.length) return;
   if (!phoneOwner) { err.textContent = "Este celular no sabe quién lo usa. Abrí de nuevo tu link de instalación."; err.style.display = "block"; return; }
-  const b = borrador(pdCat);
-  const editando = b.editando || "";
+  const editando = editandoPedido();
   const pedido = editando || newId();
   const cargado = nowStamp();
+  const fecha = document.getElementById("pdFecha").value || todayStr();
   const nota = document.getElementById("pdNota").value.trim();
   const base = editando ? pedido + "-m" + Date.now().toString(36) : pedido;
-  const items = lineas.map((l, i) => Object.assign({ id: base + "-" + i, pedido: pedido, fecha: b.fecha, categoria: pdCat }, l,
+  const items = lineas.map((l, i) => Object.assign({ id: base + "-" + i, pedido: pedido, fecha: fecha }, l,
     { persona: phoneOwner, nota: nota, cargado: cargado, estado: "En espera" }));
-  guardarBorrador(pdCat, null);
+  CATEGORIAS_PEDIDO.forEach(cat => guardarBorrador(cat, null));
   document.getElementById("pdNota").value = "";
   closeOverlay("pedOverlay");
   showTab("pedidos");
@@ -2177,12 +2195,12 @@ function avisarEnvio(op, titulo) {
 
 document.querySelectorAll("#pedOverlay [data-pdback]").forEach(x => x.addEventListener("click", () => goPd(Number(x.getAttribute("data-pdback")))));
 document.querySelectorAll("#pedOverlay [data-pdrevisar]").forEach(x => x.addEventListener("click", () => {
-  if (!lineasBorrador(pdCat).length) { showToast("Todavía no anotaste nada"); return; }
+  if (!lineasTodas().length) { showToast("Todavía no anotaste nada"); return; }
   goPd(4);
 }));
 document.querySelectorAll("#pedOverlay [data-pdclose]").forEach(x => x.addEventListener("click", () => {
   // Si se estaba modificando un pedido y se cierra, el pedido queda como estaba.
-  if (pdCat && borrador(pdCat).editando) guardarBorrador(pdCat, null);
+  CATEGORIAS_PEDIDO.forEach(cat => { if (borrador(cat).editando) guardarBorrador(cat, null); });
   closeOverlay("pedOverlay");
 }));
 document.getElementById("openPedido").addEventListener("click", openPedido);
@@ -2227,7 +2245,7 @@ function renderPedidos() {
     const est = estadoPedido(items);
     const k = String(it.pedido || it.id);
     const ver = pedidosAbiertos.has(k);
-    return '<details class="group" data-ped="' + esc(k) + '"' + (ver ? " open" : "") + '><summary><div class="g-left"><div class="g-title">Pedido del ' + esc(dayLabel(it.fecha)) + ' · ' + esc(it.categoria) + '</div>' +
+    return '<details class="group" data-ped="' + esc(k) + '"' + (ver ? " open" : "") + '><summary><div class="g-left"><div class="g-title">Pedido del ' + esc(dayLabel(it.fecha)) + ' · ' + esc(catsDePedido(items)) + '</div>' +
       '<div class="g-meta">' + (provs === 1 ? "1 proveedor" : provs + " proveedores") + ' · ' + esc(it.persona) + '</div></div>' +
       '<span class="estado ' + est.cls + '">' + esc(est.txt) + '</span></summary><div class="g-body">' + (ver ? pedidoBody(items) : "") + '</div></details>';
   }).join("");
@@ -2246,6 +2264,11 @@ function renderPedidos() {
   document.getElementById("pedidoMore").style.display = todos.length > pedidoLimit ? "block" : "none";
 }
 const pedidosAbiertos = new Set();
+function catsDePedido(items) {
+  const l = [];
+  items.forEach(x => { const c = normCat(x.categoria) || "Barra"; if (!l.includes(c)) l.push(c); });
+  return CATEGORIAS_PEDIDO.filter(c => l.includes(c)).concat(l.filter(c => !CATEGORIAS_PEDIDO.includes(c))).join(" + ");
+}
 function pedidoBody(items) {
   const it = items[0];
   const ed = puedeEditar(items);
@@ -2282,19 +2305,23 @@ function bindPedido(body, items) {
 // reemplaza al de la planilla.
 function modificarPedido(items) {
   const it = items[0];
-  const cat = normCat(it.categoria) || "Barra";
   const pid = idPedido(it);
-  const antes = borrador(cat);
-  if (Object.keys(antes.items).length && antes.editando !== pid &&
-    !confirm("Tenés un pedido de " + cat + " a medio armar sin enviar. Si modificás este, ese se descarta. ¿Seguís?")) return;
-  const b = { fecha: it.fecha, items: {}, editando: pid, nota: it.nota || "" };
-  items.forEach(x => { b.items[(x.proveedor || SIN_PROV) + SEP + x.producto] = Number(x.cantidad); });
-  guardarBorrador(cat, b);
-  pdCat = cat; pdFam = "";
+  const aMedias = CATEGORIAS_PEDIDO.some(cat => Object.keys(borrador(cat).items).length && borrador(cat).editando !== pid);
+  if (aMedias && !confirm("Tenés un pedido a medio armar sin enviar. Si modificás este, ese se descarta. ¿Seguís?")) return;
+  CATEGORIAS_PEDIDO.forEach(cat => guardarBorrador(cat, null));
+  const porCat = {};
+  items.forEach(x => {
+    const cat = normCat(x.categoria) || "Barra";
+    const b = porCat[cat] = porCat[cat] || { fecha: it.fecha, items: {}, editando: pid, nota: it.nota || "" };
+    b.items[(x.proveedor || SIN_PROV) + SEP + x.producto] = Number(x.cantidad);
+  });
+  Object.keys(porCat).forEach(cat => guardarBorrador(cat, porCat[cat]));
+  const cats = Object.keys(porCat);
+  pdCat = cats[0]; pdFam = "";
   document.getElementById("pdFecha").value = it.fecha;
   document.getElementById("pdNota").value = it.nota || "";
   document.getElementById("pedOverlay").classList.add("open");
-  goPd(2);
+  goPd(cats.length === 1 ? 2 : 1);
 }
 document.getElementById("pedidoMore").addEventListener("click", () => { pedidoLimit += 15; renderPedidos(); });
 

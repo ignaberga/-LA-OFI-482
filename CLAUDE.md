@@ -280,6 +280,13 @@ quiere armar.
   **Descartables** (27/11/2026): cuarta categoría de pedidos, igual que
   Limpieza (familias Bolsas / Envases / Film y papeles / Cubiertos y
   varios).
+- **Un pedido con varias categorías (27/11/2026):** se anota en una
+  categoría, se vuelve y se elige otra (cada una guarda su borrador, como
+  antes); "Revisar y enviar" (también desde la pantalla de categorías)
+  muestra **todo junto** y se manda una sola vez: un mismo número de
+  pedido, cada renglón con su categoría (`lineasTodas`). Modificar trae
+  todas las categorías del pedido (`editandoPedido`); la tarjeta dice
+  "Cocina + Limpieza…". La fecha es la de la pantalla de categorías.
 - **Velocidad (17/10/2026, pedido de Ignacio):**
   - Planilla central: memoria rápida de Google (CacheService) para
     Personas y Bares (10 min) y los precios de cada bar (6 h, clave con la
