@@ -248,7 +248,7 @@ quiere armar.
   "Productos sin precio" en Config); en la hoja Pedidos, Precio y Subtotal
   quedan vacíos (las columnas siguen, para no correr nada ni perder lo
   viejo); el "Resumen de pedidos" queda Proveedor | Producto | Unidad |
-  bares | Total, con un renglón en blanco entre proveedores. **Ya no se
+  bares | Total, todo seguido (sin renglones en blanco). **Ya no se
   cargan compras** (se sacaron del menú "Cargar compras" y "Recalcular
   precios"; el código y las hojas viejas quedan). Hoja **Maestro** en la
   central: Producto | Categoría | Familia | Unidad | Proveedor, un renglón

@@ -1482,15 +1482,10 @@ function resumirPedidos_() {
   });
   const out = [head], negrita = [head.map(function () { return "bold"; })], fondo = [head.map(function () { return "#EEEAE5"; })];
   let i = 0;
-  // Sin precios (decision de noviembre 2026): por proveedor, con un renglon
-  // en blanco entre uno y otro.
+  // Sin precios (decision de noviembre 2026): por proveedor, todo seguido
+  // (sin renglones en blanco, asi se puede filtrar y ordenar).
   while (i < lista.length) {
     const prov = lista[i].prov;
-    if (out.length > 1) {
-      out.push(head.map(function () { return ""; }));
-      negrita.push(head.map(function () { return "normal"; }));
-      fondo.push(head.map(function () { return "#FFFFFF"; }));
-    }
     for (; i < lista.length && lista[i].prov === prov; i++) {
       const g = lista[i];
       out.push([g.prov, g.prod, g.unidad].concat(cols.map(function (b) { return g.bares[b] || ""; })).concat([g.cant]));
