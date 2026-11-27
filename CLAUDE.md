@@ -277,6 +277,9 @@ quiere armar.
   "Limpieza" (`catMaestro_`), familias Químicos / Papeles / Bolsas /
   Utensilios; se armaron a mano con los reportes de compras (Archi y Hugo:
   familia LIMPIEZA; Felicidad e Industrias: por proveedor y nombre).
+  **Descartables** (27/11/2026): cuarta categoría de pedidos, igual que
+  Limpieza (familias Bolsas / Envases / Film y papeles / Cubiertos y
+  varios).
 - **Velocidad (17/10/2026, pedido de Ignacio):**
   - Planilla central: memoria rápida de Google (CacheService) para
     Personas y Bares (10 min) y los precios de cada bar (6 h, clave con la

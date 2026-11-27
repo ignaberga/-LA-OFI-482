@@ -167,6 +167,7 @@
   .choice.bebidas { border-left: 6px solid var(--blue); }
   .choice.comida { border-left: 6px solid var(--green); }
   .choice.limpieza { border-left: 6px solid #8A5A9E; }
+  .choice.descartables { border-left: 6px solid #B07A2A; }
 
   .qlist { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
   .q-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 12px; border-bottom: 1px solid var(--line); }
@@ -557,7 +558,7 @@
 const APP_NAME = "Stock";
 // Versión publicada. Tiene que ser igual a la de stockbares/version.json:
 // si el archivo dice otra, la app se recarga sola con la versión nueva.
-const APP_VERSION = "2026-11-27.1";
+const APP_VERSION = "2026-11-27.2";
 // Quiénes usan la app y qué puede hacer cada uno.
 //   cargar: carga y corrige el stock de un día mientras está abierto.
 //   cerrar: cierra el stock de un día (después nadie lo puede cambiar).
@@ -589,8 +590,8 @@ const KEY_PREFIX = "stockbares_";
 const DEFAULT_UNITS = ["Botellas", "Kilos", "Unidades"];
 const DEFAULT_CANTS = ["500 cc", "700 cc", "750 cc", "1 l", "1,5 l"];
 const CATEGORIAS = ["Barra", "Cocina"];
-// En los pedidos además está Limpieza (sus productos salen de la hoja Maestro; no se cuentan en el stock).
-const CATEGORIAS_PEDIDO = ["Barra", "Cocina", "Limpieza"];
+// En los pedidos además están Limpieza y Descartables (sus productos salen de la hoja Maestro; no se cuentan en el stock).
+const CATEGORIAS_PEDIDO = ["Barra", "Cocina", "Limpieza", "Descartables"];
 // Nombres viejos de las categorías (así se guardaron las primeras pruebas).
 // No se renombran en la planilla: se leen con el nombre nuevo.
 const CAT_VIEJAS = { "Bebidas": "Barra", "Comida": "Cocina" };
@@ -1137,7 +1138,7 @@ function parseQty(s) {
 }
 function norm(s) { return String(s).toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, ""); }
 function unitLabel(u) { return String(u || "").toLowerCase(); }
-function catCls(c) { const n = normCat(c); return n === "Cocina" ? "comida" : n === "Limpieza" ? "limpieza" : "bebidas"; }
+function catCls(c) { const n = normCat(c); return n === "Cocina" ? "comida" : n === "Limpieza" ? "limpieza" : n === "Descartables" ? "descartables" : "bebidas"; }
 
 let toastTimer = null;
 function showToast(msg) {
